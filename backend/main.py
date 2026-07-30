@@ -1,3 +1,5 @@
+import json
+import os
 import uvicorn
 import firebase_admin
 from firebase_admin import credentials
@@ -6,15 +8,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.config import FIREBASE_SERVICE_ACCOUNT_PATH
 
 # Initialize Firebase Admin SDK
+# Initialize Firebase Admin SDK
 if not firebase_admin._apps:
-    cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_PATH)
+    firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+
+    if not firebase_json:
+        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT environment variable is not set.")
+
+    firebase_dict = json.loads(firebase_json)
+
+    cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred)
 
 from backend.routes import risk_assessment, sos, routes, nearby, profile, voice, chat, rag, auth
 from backend.database import seed_default_user
 from backend.services.memory_service import seed_default_memories
 from backend.services.qdrant_service import initialize_qdrant
-
 app = FastAPI(
     title="Nari AI Safety Assistant Backend",
     description="Production-grade API endpoints for Women's Safety Assistant, featuring Gemini AI threat modeling, Qdrant RAG, and Mem0 Safety Memory.",
