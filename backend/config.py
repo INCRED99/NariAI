@@ -19,8 +19,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", os.getenv("open_ai_key", ""))
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 FIREBASE_API_KEY = os.getenv("FIREBASE_API_KEY", "")
-FIREBASE_SERVICE_ACCOUNT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend", "serviceaccount.json")
-
+FIREBASE_SERVICE_ACCOUNT = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
+FIREBASE_SERVICE_ACCOUNT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "serviceaccount.json")
 # SMS Provider Configuration
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "mock")
 

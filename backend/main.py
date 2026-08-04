@@ -1,24 +1,33 @@
-import json
+import sys
 import os
+import json
 import uvicorn
 import firebase_admin
+
+# Ensure the parent directory is in sys.path to allow running directly from inside backend/
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 from firebase_admin import credentials
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import FIREBASE_SERVICE_ACCOUNT_PATH
 
 # Initialize Firebase Admin SDK
-# Initialize Firebase Admin SDK
 if not firebase_admin._apps:
     firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 
-    if not firebase_json:
-        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT environment variable is not set.")
-
-    firebase_dict = json.loads(firebase_json)
-
-    cred = credentials.Certificate(firebase_dict)
-    firebase_admin.initialize_app(cred)
+    if firebase_json:
+        firebase_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(firebase_dict)
+        firebase_admin.initialize_app(cred)
+    else:
+        # Fallback to local service account file
+        if os.path.exists(FIREBASE_SERVICE_ACCOUNT_PATH):
+            cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_PATH)
+            firebase_admin.initialize_app(cred)
+        else:
+            raise RuntimeError("FIREBASE_SERVICE_ACCOUNT environment variable is not set and backend/serviceaccount.json was not found.")
 
 from backend.routes import risk_assessment, sos, routes, nearby, profile, voice, chat, rag, auth
 from backend.database import seed_default_user
