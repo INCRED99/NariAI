@@ -2,8 +2,10 @@ import streamlit as st
 import requests
 import logging
 
+import os
+
 logger = logging.getLogger("nari.frontend_client")
-BACKEND_URL = "http://127.0.0.1:8000/api"
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000/api")
 
 def get_headers():
     """Build request headers, injecting API keys from streamlit state if available."""

@@ -5,7 +5,7 @@ import threading
 import logging
 import requests
 import speech_recognition as sr
-from frontend.modules.api_client import api_post, api_get, api_post_file
+from frontend.modules.api_client import api_post, api_get, api_post_file, BACKEND_URL
 
 logger = logging.getLogger("nari.emergency")
 
@@ -18,6 +18,10 @@ def bg_mic_listener(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token):
     try:
         logger.info("bg_mic_listener thread execution starting...")
         print("\n[THREAD DEBUG] Starting background voice listener thread...")
+        
+        headers = {}
+        if id_token:
+            headers["Authorization"] = f"Bearer {id_token}"
         
         r = sr.Recognizer()
         r.energy_threshold = 150  # Highly sensitive threshold for normal speech
@@ -250,32 +254,37 @@ def render_emergency():
                 clean = "91" + clean[1:]
             return clean
 
-        # Generate a direct chat link for each valid contact using the native application protocol
+        # Generate universal API chat links for each valid contact
         wa_urls = []
         for c in contacts:
             ph = clean_phone(c.get("phone", ""))
             if ph:
                 encoded = urllib.parse.quote(body_sms)
-                wa_urls.append(f"whatsapp://send?phone={ph}&text={encoded}")
+                wa_urls.append((c.get("name", "Contact"), c.get("relation", "Emergency Contact"), f"https://api.whatsapp.com/send?phone={ph}&text={encoded}"))
                 
         # Fallback to general share protocol if no valid contacts were resolved
         if not wa_urls:
             encoded = urllib.parse.quote(body_sms)
-            wa_urls = [f"whatsapp://send?text={encoded}"]
-            
-        # Immediately launch WhatsApp Desktop using the native protocol
+            wa_urls = [("Emergency Share", "Broadcast", f"https://api.whatsapp.com/send?text={encoded}")]
+
+        # Automatically launch WhatsApp once when the active SOS screen loads
         if not st.session_state.get("wa_opened", False):
-            import streamlit.components.v1 as components
-
             st.session_state["wa_opened"] = True
-            st.toast("Launching WhatsApp Desktop...")
-
-            js = """
-            <script>
-            """
-
-            for i, url in enumerate(wa_urls):
-                delay = i * 2500  # 2.5 seconds between contacts
+            
+            auto_wa_urls = []
+            for c in contacts:
+                ph = clean_phone(c.get("phone", ""))
+                if ph:
+                    encoded = urllib.parse.quote(body_sms)
+                    auto_wa_urls.append(f"whatsapp://send?phone={ph}&text={encoded}")
+            if not auto_wa_urls:
+                encoded = urllib.parse.quote(body_sms)
+                auto_wa_urls.append(f"whatsapp://send?text={encoded}")
+                
+            import streamlit.components.v1 as components
+            js = "<script>"
+            for i, url in enumerate(auto_wa_urls):
+                delay = i * 2000  # 2 seconds delay between contacts
                 js += f"""
                 setTimeout(function() {{
                     try {{
@@ -285,31 +294,42 @@ def render_emergency():
                     }}
                 }}, {delay});
                 """
-
-            js += """
-            </script>
-            """
-
+            js += "</script>"
             components.html(js, height=0)
+            st.toast("Automatically launching WhatsApp...", icon="💬")
             
-        # Display feedback message
-        # pyrefly: ignore [parse-error]
+        # Display styled Dispatch Hub
         st.markdown(
-            f"""
-            <div style="background:rgba(52, 199, 89, 0.08); border-radius:12px; padding:15px; width:100%; margin-bottom:15px; border:1px solid rgba(52, 199, 89, 0.3); text-align:center;">
-                <p style="margin:0; font-size:14px; font-weight: 600; color:#34C759;">💬 WhatsApp should have opened automatically to send this alert.</p>
+            """
+            <div style="background:rgba(37, 211, 102, 0.08); border-radius:12px; padding:20px; border:1px solid rgba(37, 211, 102, 0.3); margin-bottom:20px;">
+                <h4 style="margin:0 0 10px 0; color:#25D366; display:flex; align-items:center; gap:8px;">
+                    <span class="material-icons-outlined" style="color:#25D366; font-size:24px; animation: none;">chat</span>
+                    WhatsApp Dispatch Hub
+                </h4>
+                <p style="margin:0 0 15px 0; font-size:13px; color:var(--text-secondary); line-height:1.4;">
+                    Click below to securely transmit pre-filled distress coordinates and summaries to your emergency contacts via WhatsApp.
+                </p>
             </div>
             """,
             unsafe_allow_html=True
         )
         
-        # Simple backup link styled nicely in case browser blocked popup
-        backup_url = wa_urls[0] if wa_urls else "https://api.whatsapp.com/send"
-        st.markdown(
-            f'<div style="text-align: center;"><a href="{backup_url}" target="_blank" style="color: #00C6FF; font-size: 13px; text-decoration: underline;">Did not open? Click here to open manually</a></div>',
-            unsafe_allow_html=True
-        )
-                
+        for name, rel, url in wa_urls:
+            st.markdown(
+                f"""
+                <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:8px; padding:12px 18px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <strong style="color:var(--text-primary); font-size:14px; display:block;">{name}</strong>
+                        <span style="font-size:11px; color:var(--text-secondary);">{rel}</span>
+                    </div>
+                    <a href="{url}" target="_blank" style="background-color:#25D366; color:white; padding:8px 16px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:600; display:inline-block; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#128C7E'" onmouseout="this.style.backgroundColor='#25D366'">
+                        💬 Send Alert
+                    </a>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
         st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
         
         if st.button("Reset SOS Status", use_container_width=True, key="reset_sos", type="primary"):
@@ -454,33 +474,181 @@ def render_emergency():
                 st.rerun()
                 
             if is_listening:
-                # Start background thread if not already running
-                if thread_key not in GLOBAL_THREADS or not GLOBAL_THREADS[thread_key].is_alive():
-                    GLOBAL_THREADS.pop(thread_key, None)
-                    id_token = st.session_state.get("idToken")
-                    t = threading.Thread(
-                        target=bg_mic_listener,
-                        args=(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token),
-                        daemon=True
-                    )
-                    GLOBAL_THREADS[thread_key] = t
-                    t.start()
-                    
-                # Periodic page rerun component to poll GLOBAL_PANIC_TRIGGERS
                 import streamlit.components.v1 as components
-                components.html(
-                    """
-                    <script>
-                        setTimeout(() => {
-                            window.parent.postMessage({
-                                type: 'streamlit:setComponentValue',
-                                value: Date.now()
-                            }, '*');
-                        }, 2000);
-                    </script>
+                import json
+                
+                # Setup distress keywords
+                distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "stop"]
+                if safe_word:
+                    distress_keywords.append(safe_word.lower())
+                
+                keywords_js = json.dumps(distress_keywords)
+                disp_safe_word = safe_word if safe_word else "None"
+                
+                # Client-side Web Speech API component
+                browser_mic_val = components.html(
+                    f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+                        <style>
+                            .mic-box {{
+                                display: flex;
+                                align-items: center;
+                                gap: 15px;
+                                padding: 15px;
+                                background: rgba(255, 59, 48, 0.08);
+                                border-radius: 12px;
+                                border: 1px solid rgba(255, 59, 48, 0.3);
+                                color: #FFFFFF;
+                                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                            }}
+                            .material-icons-outlined {{
+                                font-size: 32px;
+                                color: #FF3B30;
+                                animation: pulse-sos 1.5s infinite;
+                            }}
+                            @keyframes pulse-sos {{
+                                0% {{ opacity: 0.6; transform: scale(1); }}
+                                50% {{ opacity: 1; transform: scale(1.1); }}
+                                100% {{ opacity: 0.6; transform: scale(1); }}
+                            }}
+                            .status-text {{
+                                font-size: 14px;
+                                font-weight: 600;
+                                display: block;
+                                color: #FF3B30;
+                            }}
+                            .sub-text {{
+                                font-size: 12px;
+                                color: #9E9EAF;
+                                display: block;
+                                margin-top: 2px;
+                            }}
+                            .error-box {{
+                                background: rgba(255, 149, 0, 0.08);
+                                border-color: rgba(255, 149, 0, 0.3);
+                            }}
+                            .error-box .material-icons-outlined {{
+                                color: #FF9500;
+                                animation: none;
+                            }}
+                            .error-box .status-text {{
+                                color: #FF9500;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div id="mic_box" class="mic-box">
+                            <span id="mic_icon" class="material-icons-outlined">settings_voice</span>
+                            <div>
+                                <span class="status-text" id="status_text">🟢 Active browser microphone listener - Monitoring...</span>
+                                <span class="sub-text" id="sub_text">Say "help", "bachao", or your safe word (<strong>{disp_safe_word}</strong>) to trigger SOS.</span>
+                            </div>
+                        </div>
+                        <script>
+                            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                            const micBox = document.getElementById("mic_box");
+                            const micIcon = document.getElementById("mic_icon");
+                            const statusText = document.getElementById("status_text");
+                            const subText = document.getElementById("sub_text");
+                            
+                            const distressKeywords = {keywords_js};
+                            
+                            if (!SpeechRecognition) {{
+                                micBox.className = "mic-box error-box";
+                                micIcon.innerText = "warning";
+                                statusText.innerText = "Browser Speech API Unsupported";
+                                subText.innerText = "Please use a modern browser (Google Chrome, Safari, or Microsoft Edge) for voice SOS.";
+                            }} else {{
+                                let recognition = new SpeechRecognition();
+                                recognition.continuous = true;
+                                recognition.interimResults = false;
+                                recognition.lang = 'en-IN';
+                                
+                                recognition.onresult = function(event) {{
+                                    const lastIndex = event.results.length - 1;
+                                    const transcript = event.results[lastIndex][0].transcript.toLowerCase();
+                                    console.log("Browser Speech Recognition heard:", transcript);
+                                    
+                                    let found = false;
+                                    for (const kw of distressKeywords) {{
+                                        if (transcript.includes(kw)) {{
+                                            found = true;
+                                            break;
+                                        }}
+                                    }}
+                                    
+                                    if (found) {{
+                                        window.parent.postMessage({{
+                                            type: 'streamlit:setComponentValue',
+                                            value: {{
+                                                panic_detected: true,
+                                                transcript: transcript,
+                                                timestamp: Date.now()
+                                            }}
+                                        }}, '*');
+                                    }}
+                                }};
+                                
+                                recognition.onerror = function(event) {{
+                                    console.error("Speech recognition error:", event.error);
+                                    if (event.error === 'not-allowed') {{
+                                        micBox.className = "mic-box error-box";
+                                        micIcon.innerText = "gpp_bad";
+                                        statusText.innerText = "Microphone Permission Blocked";
+                                        subText.innerText = "Please allow microphone access in your browser settings to use voice SOS.";
+                                    }}
+                                }};
+                                
+                                recognition.onend = function() {{
+                                    try {{
+                                        recognition.start();
+                                    }} catch (e) {{
+                                        console.log("Failed to restart speech recognition:", e);
+                                    }}
+                                }};
+                                
+                                try {{
+                                    recognition.start();
+                                }} catch (e) {{
+                                    console.error("SpeechRecognition start error:", e);
+                                }}
+                            }}
+                        </script>
+                    </body>
+                    </html>
                     """,
-                    height=0
+                    height=100
                 )
+                
+                # Check for panic trigger
+                if browser_mic_val and isinstance(browser_mic_val, dict) and browser_mic_val.get("panic_detected"):
+                    transcript = browser_mic_val.get("transcript")
+                    last_mic_trigger = st.session_state.get("last_mic_trigger_time", 0)
+                    current_trigger_time = browser_mic_val.get("timestamp", 0)
+                    
+                    if current_trigger_time > last_mic_trigger:
+                        st.session_state["last_mic_trigger_time"] = current_trigger_time
+                        st.toast(f"🚨 Vocal Panic Trigger Detected! Transcript: '{transcript}'", icon="🚨")
+                        
+                        # Trigger SOS
+                        situation_desc = f"Voice SOS listener detected: '{transcript}'"
+                        payload = {
+                            "situation": situation_desc,
+                            "location_name": calc_loc_val,
+                            "latitude": user_lat,
+                            "longitude": user_lng,
+                            "battery_level": 85
+                        }
+                        res = api_post("/sos", payload)
+                        if res and res.get("success"):
+                            st.session_state["sos_sms_body"] = res.get("sms_body", "")
+                            st.session_state["sos_sent"] = True
+                            st.session_state["wa_opened"] = False
+                            st.session_state["voice_listener_active"] = False
+                            st.rerun()
                 
             if is_listening:
                 st.markdown("<p style='font-size:12px; font-weight:600; margin:20px 0 8px 0;'>Simulate Vocal Panic Sample (Whisper):</p>", unsafe_allow_html=True)
