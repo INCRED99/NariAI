@@ -88,7 +88,7 @@ def render_profile():
         friends_val = st.text_input("Friends Contact Detail", value=c_friends)
         roommate_val = st.text_input("Roommate Contact Detail", value=c_roommate)
 
-        if st.button("💾 SAVE PROFILE AND SYNC AI MEMORY", key="btn_save_full_profile", use_container_width=True, type="primary"):
+        if st.button("💾 SAVE PROFILE AND SYNC AI MEMORY", key="btn_save_full_profile", width="stretch", type="primary"):
             # Parse contact strings back to structured items
             def parse_contact_str(val, default_name, default_rel, default_phone):
                 try:
@@ -169,7 +169,7 @@ def render_profile():
             
         # Add a reset button for memories
         st.markdown("<hr style='margin: 15px 0; border-top: 1px solid var(--border-color);'>", unsafe_allow_html=True)
-        if st.button("Clear AI Safety Memories", use_container_width=True, key="clear_mem_btn"):
+        if st.button("Clear AI Safety Memories", width="stretch", key="clear_mem_btn"):
             res = api_post("/profile/clear-memories")
             if res and res.get("success"):
                 st.toast("Safety memories cleared successfully.")
@@ -222,5 +222,5 @@ def render_profile():
             textfont=dict(color=font_color, size=11),
             marker=dict(line=dict(width=0))
         )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig, width="stretch", config={'displayModeBar': False})
         st.markdown('</div>', unsafe_allow_html=True)

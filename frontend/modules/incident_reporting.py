@@ -72,13 +72,13 @@ def render_incident_reporting():
                 )
         with vc_col2:
             if st.session_state["mic_recording"]:
-                if st.button("🔴 STOP RECORDING", key="btn_stop_mic", use_container_width=True):
+                if st.button("🔴 STOP RECORDING", key="btn_stop_mic", width="stretch"):
                     st.session_state["mic_recording"] = False
                     st.session_state["reporter_desc"] = "A suspicious group of people gathered near the street corner. The lamps are broken here and there is no guard present."
                     st.toast("Voice recorded and parsed by AI!")
                     st.rerun()
             else:
-                if st.button("🎤 RECORD TRANSCRIPT", key="btn_start_mic", use_container_width=True):
+                if st.button("🎤 RECORD TRANSCRIPT", key="btn_start_mic", width="stretch"):
                     st.session_state["mic_recording"] = True
                     st.toast("Recording simulator active. Speak for 2 seconds...")
                     st.rerun()
@@ -176,12 +176,12 @@ def render_incident_reporting():
                 """,
                 unsafe_allow_html=True
             )
-            if st.button("File New Report", key="btn_reset_report", use_container_width=True):
+            if st.button("File New Report", key="btn_reset_report", width="stretch"):
                 st.session_state["reporter_submitted"] = False
                 st.session_state["reporter_desc"] = ""
                 st.rerun()
         else:
-            if st.button("🚀 SUBMIT REPORT", key="btn_submit_report", use_container_width=True, type="primary"):
+            if st.button("🚀 SUBMIT REPORT", key="btn_submit_report", width="stretch", type="primary"):
                 st.session_state["reporter_submitted"] = True
                 st.toast("🎉 Incident submitted successfully!")
                 st.rerun()

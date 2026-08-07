@@ -57,7 +57,7 @@ def render_settings():
         siren_vol = st.slider("Alarm/Siren Volume", min_value=0, max_value=100, value=80)
         
         st.markdown("<h4 style='margin-top:25px; margin-bottom:10px;'>Alert Sound Test</h4>", unsafe_allow_html=True)
-        if st.button("🔊 Test High-Pitch Siren", use_container_width=True):
+        if st.button("🔊 Test High-Pitch Siren", width="stretch"):
             st.toast("🚨 Playing emergency siren test!")
             st.audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", start_time=0)
             

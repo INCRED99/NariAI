@@ -214,7 +214,7 @@ def render_ai_assistant():
         ]
         
         # Add visible "I'm Unsafe" emergency conversation starter button
-        if st.button("🚨 I'm Unsafe", use_container_width=True, key="btn_unsafe_trigger", type="primary"):
+        if st.button("🚨 I'm Unsafe", width="stretch", key="btn_unsafe_trigger", type="primary"):
             submit_user_message("I'm Unsafe")
             
         for prompt in prompts:
@@ -224,7 +224,7 @@ def render_ai_assistant():
                 elif prompt == "Draft emergency SMS": display_prompt = "एसओएस एसएमएस तैयार करें"
                 elif prompt == "Tips for solo transit": display_prompt = "अकेले यात्रा के सुझाव"
                 
-            if st.button(display_prompt, use_container_width=True, key=f"quick_{prompt}"):
+            if st.button(display_prompt, width="stretch", key=f"quick_{prompt}"):
                 submit_user_message(display_prompt)
 
         st.markdown("</div>", unsafe_allow_html=True)
@@ -279,7 +279,7 @@ def render_ai_assistant():
             # Action Buttons Row (Call Emergency button removed)
             erc1, erc2 = st.columns(2)
             with erc1:
-                if st.button(t_dict["btn_share_loc"], key="chat_share_loc", use_container_width=True):
+                if st.button(t_dict["btn_share_loc"], key="chat_share_loc", width="stretch"):
                     st.toast("🚨 Triggering SOS alert procedure...", icon="🚨")
                     user_lat = st.session_state.get("current_lat", 26.8346)
                     user_lng = st.session_state.get("current_lng", 80.9249)
@@ -321,7 +321,7 @@ def render_ai_assistant():
                     st.session_state["active_page"] = "Emergency"
                     st.rerun()
             with erc2:
-                if st.button(t_dict["btn_find_police"], key="chat_find_police", use_container_width=True):
+                if st.button(t_dict["btn_find_police"], key="chat_find_police", width="stretch"):
                     st.session_state["active_page"] = "Nearby Safe Places"
                     st.session_state["selected_category"] = "Police Station"
                     st.rerun()
@@ -443,7 +443,7 @@ def render_ai_assistant():
         
         in_col1, in_col2, in_col3 = st.columns([0.15, 0.15, 0.7])
         with in_col1:
-            voice_trigger = st.button("🎤", help="Voice Input", key="btn_voice_input", use_container_width=True)
+            voice_trigger = st.button("🎤", help="Voice Input", key="btn_voice_input", width="stretch")
             if voice_trigger:
                 # Compile fake audio content, simulating speech translation in selected language
                 # Shifting this trigger directly calls our speech-to-text API
@@ -468,7 +468,7 @@ def render_ai_assistant():
                     st.error("Speech transcription offline.")
 
         with in_col2:
-            img_trigger = st.button("📷", help="Upload safety photo", key="btn_img_input", use_container_width=True)
+            img_trigger = st.button("📷", help="Upload safety photo", key="btn_img_input", width="stretch")
             if img_trigger:
                 st.toast("Simulating Cam scan...")
                 time.sleep(0.8)
@@ -487,7 +487,7 @@ def render_ai_assistant():
         with in_col3:
             with st.form("chat_form", clear_on_submit=True):
                 user_text = st.text_input("Type your message here...", placeholder=t_dict["placeholder"], label_visibility="collapsed")
-                submit_button = st.form_submit_button(t_dict["send"], use_container_width=True)
+                submit_button = st.form_submit_button(t_dict["send"], width="stretch")
                 if submit_button and user_text:
                     submit_user_message(user_text)
 

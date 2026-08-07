@@ -131,7 +131,7 @@ def render_dashboard():
                 line=dict(color=line_color, width=2.5),
                 fillcolor="rgba(122, 92, 255, 0.15)"
             )
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(fig, width="stretch", config={'displayModeBar': False})
             st.markdown("</div>", unsafe_allow_html=True)
 
             # Recent Incidents Feed
@@ -207,7 +207,7 @@ def render_dashboard():
                 height=160,
                 template="plotly_dark" if is_dark else "plotly_white"
             )
-            st.plotly_chart(fig_score, use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(fig_score, width="stretch", config={'displayModeBar': False})
             
             st.markdown(
                 f"""
@@ -254,18 +254,18 @@ def render_dashboard():
             )
             qa1, qa2 = st.columns(2)
             with qa1:
-                if st.button("🚨 Trigger SOS", use_container_width=True, key="qa_sos"):
+                if st.button("🚨 Trigger SOS", width="stretch", key="qa_sos"):
                     st.session_state["sos_triggered"] = True
                     st.session_state["active_page"] = "Emergency"
                     st.rerun()
-                if st.button("💬 Safety AI Chat", use_container_width=True, key="qa_chat"):
+                if st.button("💬 Safety AI Chat", width="stretch", key="qa_chat"):
                     st.session_state["active_page"] = "AI Assistant"
                     st.rerun()
             with qa2:
-                if st.button("🗺️ Safe Route Home", use_container_width=True, key="qa_route"):
+                if st.button("🗺️ Safe Route Home", width="stretch", key="qa_route"):
                     st.session_state["active_page"] = "Safe Route"
                     st.rerun()
-                if st.button("⚠️ File Report", use_container_width=True, key="qa_report"):
+                if st.button("⚠️ File Report", width="stretch", key="qa_report"):
                     st.session_state["active_page"] = "Incident Reporting"
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
@@ -340,7 +340,7 @@ def render_dashboard():
                 c3_rel = st.text_input("Contact 3 Relation", value=contacts[2]["relation"], key="dash_c3_rel")
                 c3_phone = st.text_input("Contact 3 Phone", value=contacts[2]["phone"], key="dash_c3_phone")
                 
-                if st.button("💾 Save Emergency Contacts", key="btn_save_dash_contacts", use_container_width=True, type="primary"):
+                if st.button("💾 Save Emergency Contacts", key="btn_save_dash_contacts", width="stretch", type="primary"):
                     updated_contacts = [
                         {"name": c1_name, "relation": c1_rel, "phone": c1_phone},
                         {"name": c2_name, "relation": c2_rel, "phone": c2_phone},
@@ -521,7 +521,7 @@ def render_dashboard():
             height=185,
             template="plotly_dark" if is_dark else "plotly_white"
         )
-        st.plotly_chart(fig_risk, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_risk, width="stretch", config={'displayModeBar': False})
         
         st.markdown(
             f"""
@@ -541,7 +541,7 @@ def render_dashboard():
         
         # Action button
         if final_risk >= 45:
-            if st.button("🚨 TRIGGER EMERGENCY ASSISTANT", key="assess_trigger_sos", use_container_width=True, type="primary"):
+            if st.button("🚨 TRIGGER EMERGENCY ASSISTANT", key="assess_trigger_sos", width="stretch", type="primary"):
                 st.session_state["active_page"] = "Emergency"
                 st.session_state["sos_triggered"] = True
                 st.rerun()

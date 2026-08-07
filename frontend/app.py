@@ -258,7 +258,7 @@ if quick_theme != st.session_state["dark_mode"]:
     st.rerun()
 
 st.sidebar.markdown("<hr style='border:0; border-top: 1px solid var(--border-color); margin:10px 0;'>", unsafe_allow_html=True)
-if st.sidebar.button("🚪 Logout", key="logout_btn", use_container_width=True):
+if st.sidebar.button("🚪 Logout", key="logout_btn", width="stretch"):
     st.session_state["authenticated"] = False
     st.session_state["idToken"] = ""
     st.session_state["uid"] = ""

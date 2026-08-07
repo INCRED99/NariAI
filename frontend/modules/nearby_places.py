@@ -109,7 +109,7 @@ def render_nearby_places():
             is_active = (st.session_state["active_nav_place"] == place["name"])
             btn_label = "📍 Safe Path Active" if is_active else "🧭 Render Route Path"
             
-            if st.button(btn_label, key=btn_key, use_container_width=True, type="primary" if is_active else "secondary"):
+            if st.button(btn_label, key=btn_key, width="stretch", type="primary" if is_active else "secondary"):
                 st.session_state["active_nav_place"] = place["name"]
                 st.toast(f"Plotting safe path to {place['name']}", icon="🧭")
                 st.rerun()

@@ -326,7 +326,7 @@ def render_emergency():
             
         st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
         
-        if st.button("Reset SOS Status", use_container_width=True, key="reset_sos", type="primary"):
+        if st.button("Reset SOS Status", width="stretch", key="reset_sos", type="primary"):
             filename = st.session_state.get("audio_filename", "")
             if filename:
                 from frontend.modules.api_client import api_delete
@@ -359,7 +359,7 @@ def render_emergency():
             custom_message = st.text_input("Type distress message (optional)", placeholder="E.g., Someone is following me near Block C...", key="sos_custom_message")
             
             # Hidden button mapped to CSS click action
-            if st.button("🚨 TRIGGER SOS NOW", key="hidden_sos_trigger", use_container_width=True, type="primary"):
+            if st.button("🚨 TRIGGER SOS NOW", key="hidden_sos_trigger", width="stretch", type="primary"):
                 situation_desc = custom_message if custom_message else "Urgent Distress SOS Signal Triggered by user."
                 payload = {
                     "situation": situation_desc,
@@ -418,7 +418,7 @@ def render_emergency():
             contacts = profile_db.get("emergency_contacts", [])
             safe_word = profile_db.get("safe_word", "Blue Moon")
             
-            if st.button(btn_label, key="toggle_voice_listener", use_container_width=True, type="primary" if is_listening else "secondary"):
+            if st.button(btn_label, key="toggle_voice_listener", width="stretch", type="primary" if is_listening else "secondary"):
                 if is_listening:
                     # User clicked "Stop Listener" -> trigger SOS immediately!
                     st.session_state["voice_listener_active"] = False
@@ -661,11 +661,11 @@ def render_emergency():
                 # Simulation buttons
                 t1, t2, t3 = st.columns(3)
                 with t1:
-                    scream = st.button("Scream", key="sim_scream", use_container_width=True)
+                    scream = st.button("Scream", key="sim_scream", width="stretch")
                 with t2:
-                    help_word = st.button("Help", key="sim_help", use_container_width=True)
+                    help_word = st.button("Help", key="sim_help", width="stretch")
                 with t3:
-                    bachao = st.button("Bachao", key="sim_bachao", use_container_width=True)
+                    bachao = st.button("Bachao", key="sim_bachao", width="stretch")
                     
                 custom_input = st.text_input("Or simulate custom spoken phrase", placeholder="Say something...", key="sim_custom_voice")
                 

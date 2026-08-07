@@ -32,7 +32,7 @@ def render_auth_page():
             password = st.text_input("Password", type="password", placeholder="••••••••", key="login_pwd")
             
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            if st.button("🔓 ACCESS SAFETY HUB", use_container_width=True, type="primary", key="login_btn"):
+            if st.button("🔓 ACCESS SAFETY HUB", width="stretch", type="primary", key="login_btn"):
                 if not email or not password:
                     st.error("Please enter both email and password.")
                 else:
@@ -70,7 +70,7 @@ def render_auth_page():
             )
             
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            if st.button("🛡️ CREATE SECURE ACCOUNT", use_container_width=True, type="primary", key="reg_btn"):
+            if st.button("🛡️ CREATE SECURE ACCOUNT", width="stretch", type="primary", key="reg_btn"):
                 if not name or not email or not phone or not password:
                     st.error("All fields (Name, Email, Phone, Password) are required.")
                 elif len(password) < 6:

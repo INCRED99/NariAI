@@ -129,7 +129,7 @@ def render_route_safety():
             height=110,
             template="plotly_dark" if is_dark else "plotly_white"
         )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig, width="stretch", config={'displayModeBar': False})
         
         # Explain why
         color_header = "#34C759" if risk_score > 60 else "#FF3B30"
