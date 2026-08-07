@@ -291,6 +291,7 @@ def render_emergency():
         # Build contact rows HTML
         contact_rows_html = ""
         for i, (name, rel, url) in enumerate(wa_urls):
+            # wa.me URL for the button click (opens WhatsApp Web or app)
             contact_rows_html += f"""
             <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1);
                         border-radius:8px; padding:12px 18px; margin-bottom:10px;
@@ -308,12 +309,47 @@ def render_emergency():
                 </a>
             </div>"""
 
-        # Auto-navigate: redirect the top window to first contact's WhatsApp URL
-        # This is the only browser-safe auto-open — no popup, no permission needed
+        # Auto-open strategy:
+        # 1. Try whatsapp:// deep link first — opens desktop app directly if installed
+        # 2. After 2s fallback to wa.me — opens WhatsApp Web if app didn't handle it
         auto_nav_js = ""
         if auto_open and wa_urls:
-            first_url = wa_urls[0][2]
-            auto_nav_js = f"window.top.location.href = '{first_url}';"
+            first_url = wa_urls[0][2]  # wa.me URL
+            # Extract phone and text from wa.me URL to build whatsapp:// URI
+            # wa.me URL format: https://wa.me/PHONE?text=MSG
+            import urllib.parse as _up
+            parsed = _up.urlparse(first_url)
+            phone_part = parsed.path.lstrip("/")
+            text_part = _up.parse_qs(parsed.query).get("text", [""])[0]
+            encoded_text = _up.quote(text_part)
+            whatsapp_uri = f"whatsapp://send?phone={phone_part}&text={encoded_text}"
+
+            auto_nav_js = f"""
+                // Try whatsapp:// deep link — opens desktop app if installed
+                var deepLink = "{whatsapp_uri}";
+                var webLink = "{first_url}";
+                
+                // Use hidden iframe to attempt deep link without navigating away
+                var iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                document.body.appendChild(iframe);
+                
+                var appOpened = false;
+                
+                // Listen for page blur — if app opened, page loses focus
+                window.top.addEventListener('blur', function() {{
+                    appOpened = true;
+                }}, {{ once: true }});
+                
+                iframe.src = deepLink;
+                
+                // After 2.5s, if app didn't open (no blur), redirect to wa.me web
+                setTimeout(function() {{
+                    if (!appOpened) {{
+                        window.top.location.href = webLink;
+                    }}
+                }}, 2500);
+            """
 
         total_height = 80 + len(wa_urls) * 75
         components.html(
@@ -325,7 +361,7 @@ def render_emergency():
                             border:1px solid rgba(37,211,102,0.3);margin-bottom:12px;">
                     <strong style="color:#25D366;font-size:14px;">💬 WhatsApp Dispatch Hub</strong>
                     <p style="margin:4px 0 0 0;font-size:12px;color:#9E9EAF;">
-                        {"Redirecting to WhatsApp... press Back to return to the app." if auto_open else "Click a button below to open WhatsApp with the pre-filled alert."}
+                        {"Launching WhatsApp... (or click the button below)" if auto_open else "Click below to send the pre-filled alert on WhatsApp."}
                     </p>
                 </div>
                 {contact_rows_html}
@@ -495,167 +531,22 @@ def render_emergency():
             if is_listening:
                 import streamlit.components.v1 as components
                 import json
-                
-                # Setup distress keywords
-                distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "stop"]
-                if safe_word:
-                    distress_keywords.append(safe_word.lower())
-                
-                keywords_js = json.dumps(distress_keywords)
-                disp_safe_word = safe_word if safe_word else "None"
-                
-                # Client-side Web Speech API component
-                browser_mic_val = components.html(
-                    f"""
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
-                        <style>
-                            .mic-box {{
-                                display: flex;
-                                align-items: center;
-                                gap: 15px;
-                                padding: 15px;
-                                background: rgba(255, 59, 48, 0.08);
-                                border-radius: 12px;
-                                border: 1px solid rgba(255, 59, 48, 0.3);
-                                color: #FFFFFF;
-                                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                            }}
-                            .material-icons-outlined {{
-                                font-size: 32px;
-                                color: #FF3B30;
-                                animation: pulse-sos 1.5s infinite;
-                            }}
-                            @keyframes pulse-sos {{
-                                0% {{ opacity: 0.6; transform: scale(1); }}
-                                50% {{ opacity: 1; transform: scale(1.1); }}
-                                100% {{ opacity: 0.6; transform: scale(1); }}
-                            }}
-                            .status-text {{
-                                font-size: 14px;
-                                font-weight: 600;
-                                display: block;
-                                color: #FF3B30;
-                            }}
-                            .sub-text {{
-                                font-size: 12px;
-                                color: #9E9EAF;
-                                display: block;
-                                margin-top: 2px;
-                            }}
-                            .error-box {{
-                                background: rgba(255, 149, 0, 0.08);
-                                border-color: rgba(255, 149, 0, 0.3);
-                            }}
-                            .error-box .material-icons-outlined {{
-                                color: #FF9500;
-                                animation: none;
-                            }}
-                            .error-box .status-text {{
-                                color: #FF9500;
-                            }}
-                        </style>
-                    </head>
-                    <body>
-                        <div id="mic_box" class="mic-box">
-                            <span id="mic_icon" class="material-icons-outlined">settings_voice</span>
-                            <div>
-                                <span class="status-text" id="status_text">🟢 Active browser microphone listener - Monitoring...</span>
-                                <span class="sub-text" id="sub_text">Say "help", "bachao", or your safe word (<strong>{disp_safe_word}</strong>) to trigger SOS.</span>
-                            </div>
-                        </div>
-                        <script>
-                            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                            const micBox = document.getElementById("mic_box");
-                            const micIcon = document.getElementById("mic_icon");
-                            const statusText = document.getElementById("status_text");
-                            const subText = document.getElementById("sub_text");
-                            
-                            const distressKeywords = {keywords_js};
-                            
-                            if (!SpeechRecognition) {{
-                                micBox.className = "mic-box error-box";
-                                micIcon.innerText = "warning";
-                                statusText.innerText = "Browser Speech API Unsupported";
-                                subText.innerText = "Please use a modern browser (Google Chrome, Safari, or Microsoft Edge) for voice SOS.";
-                            }} else {{
-                                let recognition = new SpeechRecognition();
-                                recognition.continuous = true;
-                                recognition.interimResults = false;
-                                recognition.lang = 'en-IN';
-                                
-                                recognition.onresult = function(event) {{
-                                    const lastIndex = event.results.length - 1;
-                                    const transcript = event.results[lastIndex][0].transcript.toLowerCase();
-                                    console.log("Browser Speech Recognition heard:", transcript);
-                                    
-                                    let found = false;
-                                    for (const kw of distressKeywords) {{
-                                        if (transcript.includes(kw)) {{
-                                            found = true;
-                                            break;
-                                        }}
-                                    }}
-                                    
-                                    if (found) {{
-                                        window.parent.postMessage({{
-                                            type: 'streamlit:setComponentValue',
-                                            value: {{
-                                                panic_detected: true,
-                                                transcript: transcript,
-                                                timestamp: Date.now()
-                                            }}
-                                        }}, '*');
-                                    }}
-                                }};
-                                
-                                recognition.onerror = function(event) {{
-                                    console.error("Speech recognition error:", event.error);
-                                    if (event.error === 'not-allowed') {{
-                                        micBox.className = "mic-box error-box";
-                                        micIcon.innerText = "gpp_bad";
-                                        statusText.innerText = "Microphone Permission Blocked";
-                                        subText.innerText = "Please allow microphone access in your browser settings to use voice SOS.";
-                                    }}
-                                }};
-                                
-                                recognition.onend = function() {{
-                                    try {{
-                                        recognition.start();
-                                    }} catch (e) {{
-                                        console.log("Failed to restart speech recognition:", e);
-                                    }}
-                                }};
-                                
-                                try {{
-                                    recognition.start();
-                                }} catch (e) {{
-                                    console.error("SpeechRecognition start error:", e);
-                                }}
-                            }}
-                        </script>
-                    </body>
-                    </html>
-                    """,
-                    height=100
-                )
-                
-                # Check for panic trigger
-                if browser_mic_val and isinstance(browser_mic_val, dict) and browser_mic_val.get("panic_detected"):
-                    transcript = browser_mic_val.get("transcript")
+
+                # Check if browser mic already triggered a panic via query param
+                q = st.query_params
+                if q.get("panic") == "1":
+                    transcript = q.get("transcript", "distress detected")
+                    # Clear the param immediately to avoid re-triggering on rerun
+                    st.query_params.pop("panic", None)
+                    st.query_params.pop("transcript", None)
+
                     last_mic_trigger = st.session_state.get("last_mic_trigger_time", 0)
-                    current_trigger_time = browser_mic_val.get("timestamp", 0)
-                    
-                    if current_trigger_time > last_mic_trigger:
-                        st.session_state["last_mic_trigger_time"] = current_trigger_time
-                        st.toast(f"🚨 Vocal Panic Trigger Detected! Transcript: '{transcript}'", icon="🚨")
-                        
-                        # Trigger SOS
-                        situation_desc = f"Voice SOS listener detected: '{transcript}'"
+                    now_ts = int(time.time() * 1000)
+                    if now_ts > last_mic_trigger + 3000:
+                        st.session_state["last_mic_trigger_time"] = now_ts
+                        st.toast(f"🚨 Vocal Panic Detected: '{transcript}'", icon="🚨")
                         payload = {
-                            "situation": situation_desc,
+                            "situation": f"Voice SOS listener detected: '{transcript}'",
                             "location_name": calc_loc_val,
                             "latitude": user_lat,
                             "longitude": user_lng,
@@ -668,7 +559,119 @@ def render_emergency():
                             st.session_state["wa_opened"] = False
                             st.session_state["voice_listener_active"] = False
                             st.rerun()
-                
+
+                # Setup distress keywords
+                distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "stop", "bachao bachao", "madad"]
+                if safe_word:
+                    distress_keywords.append(safe_word.lower())
+
+                keywords_js = json.dumps(distress_keywords)
+                disp_safe_word = safe_word if safe_word else "None"
+
+                # Get the current page URL to append panic params
+                current_url_js = "window.top.location.href.split('?')[0]"
+
+                components.html(
+                    f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+                        <style>
+                            body {{ margin:0; padding:0; background:transparent; }}
+                            .mic-box {{
+                                display: flex; align-items: center; gap: 15px; padding: 15px;
+                                background: rgba(255, 59, 48, 0.08); border-radius: 12px;
+                                border: 1px solid rgba(255, 59, 48, 0.3); color: #FFFFFF;
+                                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                            }}
+                            .material-icons-outlined {{ font-size: 32px; color: #FF3B30; animation: pulse-sos 1.5s infinite; }}
+                            @keyframes pulse-sos {{
+                                0% {{ opacity: 0.6; transform: scale(1); }}
+                                50% {{ opacity: 1; transform: scale(1.1); }}
+                                100% {{ opacity: 0.6; transform: scale(1); }}
+                            }}
+                            .status-text {{ font-size: 14px; font-weight: 600; display: block; color: #FF3B30; }}
+                            .sub-text {{ font-size: 12px; color: #9E9EAF; display: block; margin-top: 2px; }}
+                            .error-box {{ background: rgba(255,149,0,0.08); border-color: rgba(255,149,0,0.3); }}
+                            .error-box .material-icons-outlined {{ color: #FF9500; animation: none; }}
+                            .error-box .status-text {{ color: #FF9500; }}
+                        </style>
+                    </head>
+                    <body>
+                        <div id="mic_box" class="mic-box">
+                            <span id="mic_icon" class="material-icons-outlined">settings_voice</span>
+                            <div>
+                                <span class="status-text" id="status_text">🟢 Listening for distress words...</span>
+                                <span class="sub-text" id="sub_text">Say "help", "bachao", or your safe word (<strong>{disp_safe_word}</strong>) to trigger SOS.</span>
+                            </div>
+                        </div>
+                        <script>
+                            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                            const micBox = document.getElementById("mic_box");
+                            const micIcon = document.getElementById("mic_icon");
+                            const statusText = document.getElementById("status_text");
+                            const subText = document.getElementById("sub_text");
+                            const distressKeywords = {keywords_js};
+
+                            if (!SpeechRecognition) {{
+                                micBox.className = "mic-box error-box";
+                                micIcon.innerText = "warning";
+                                statusText.innerText = "Browser Speech API Unsupported";
+                                subText.innerText = "Use Chrome, Edge, or Safari for voice SOS.";
+                            }} else {{
+                                let recognition = new SpeechRecognition();
+                                recognition.continuous = true;
+                                recognition.interimResults = false;
+                                recognition.lang = 'en-IN';
+
+                                recognition.onresult = function(event) {{
+                                    const lastIndex = event.results.length - 1;
+                                    const transcript = event.results[lastIndex][0].transcript.toLowerCase();
+                                    console.log("Heard:", transcript);
+
+                                    let found = false;
+                                    for (const kw of distressKeywords) {{
+                                        if (transcript.includes(kw)) {{ found = true; break; }}
+                                    }}
+
+                                    if (found) {{
+                                        statusText.innerText = "🚨 PANIC DETECTED: " + transcript;
+                                        // Navigate top window to current URL with panic query params
+                                        // Streamlit will detect these on next render cycle
+                                        const base = window.top.location.href.split('?')[0];
+                                        const params = new URLSearchParams(window.top.location.search);
+                                        params.set('panic', '1');
+                                        params.set('transcript', transcript);
+                                        window.top.location.href = base + '?' + params.toString();
+                                    }}
+                                }};
+
+                                recognition.onerror = function(event) {{
+                                    console.error("Speech error:", event.error);
+                                    if (event.error === 'not-allowed') {{
+                                        micBox.className = "mic-box error-box";
+                                        micIcon.innerText = "gpp_bad";
+                                        statusText.innerText = "Microphone Permission Blocked";
+                                        subText.innerText = "Allow microphone access in browser settings.";
+                                    }}
+                                }};
+
+                                recognition.onend = function() {{
+                                    try {{ recognition.start(); }} catch(e) {{}}
+                                }};
+
+                                try {{ recognition.start(); }} catch(e) {{
+                                    console.error("Start error:", e);
+                                }}
+                            }}
+                        </script>
+                    </body>
+                    </html>
+                    """,
+                    height=100
+                )
+
             if is_listening:
                 st.markdown("<p style='font-size:12px; font-weight:600; margin:20px 0 8px 0;'>Simulate Vocal Panic Sample (Whisper):</p>", unsafe_allow_html=True)
                 
