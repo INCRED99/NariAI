@@ -508,62 +508,15 @@ def render_emergency():
             
             if st.button(btn_label, key="toggle_voice_listener", width="stretch", type="primary" if is_listening else "secondary"):
                 if is_listening:
-                    # User clicked "Stop Listener" -> trigger SOS immediately
+                    # Don't immediately trigger SOS — let JS finish audio upload and capture final transcript
+                    # Set a flag the JS component will detect, finalize recording, then navigate with ?panic=1
                     st.session_state["voice_listener_active"] = False
+                    st.session_state["stop_listener_requested"] = True
                     GLOBAL_THREADS.pop(thread_key, None)
-
-                    audio_url = ""
-                    filename = ""
-
-                    # Try to upload captured audio only if server-mic was active
-                    if not IS_RENDER and SR_AVAILABLE:
-                        wav_data = LATEST_MICROPHONE_AUDIO.pop(uid, None)
-                        if wav_data:
-                            try:
-                                import requests as _req
-                                headers = {}
-                                id_token = st.session_state.get("idToken")
-                                if id_token:
-                                    headers["Authorization"] = f"Bearer {id_token}"
-                                files = {"file": ("sos_audio.wav", wav_data, "audio/wav")}
-                                upload_res = _req.post(f"{BACKEND_URL}/sos/upload-audio", files=files, headers=headers, timeout=5)
-                                if upload_res.status_code == 200:
-                                    upload_data = upload_res.json()
-                                    audio_url = upload_data.get("audio_url", "")
-                                    filename = upload_data.get("filename", "")
-                            except Exception as upload_err:
-                                logger.error(f"Failed uploading audio: {upload_err}")
-
-                    # Always trigger SOS regardless of platform or audio
-                    # Pass transcript from session state if browser mic detected words
-                    spoken = st.session_state.get("last_mic_transcript", "")
-                    if spoken:
-                        situation_text = f"Voice SOS trigger: '{spoken}'\nVoice listener stopped by user."
-                    else:
-                        situation_text = "Voice SOS trigger: 'manual stop'\nVoice listener stopped by user."
-                    if audio_url:
-                        situation_text += f"\nLive Audio Alert: {audio_url}"
-
-                    payload = {
-                        "situation": situation_text,
-                        "location_name": calc_loc_val,
-                        "latitude": user_lat,
-                        "longitude": user_lng,
-                        "battery_level": 85
-                    }
-                    res = api_post("/sos", payload)
-                    if res and res.get("success"):
-                        st.session_state["sos_sms_body"] = res.get("sms_body", "")
-                        st.session_state["audio_filename"] = filename
-                    else:
-                        # Fallback message if backend call fails
-                        st.session_state["sos_sms_body"] = f"🚨 EMERGENCY! SOS triggered at {calc_loc_val}. Please send help immediately!"
-                    st.session_state["sos_sent"] = True
-                    st.session_state["wa_opened"] = False
                 else:
-                    # User clicked "Activate Safety Listener"
                     st.session_state["voice_listener_active"] = True
-                    # On Render (hosted), skip server-side mic thread — browser Web Speech API handles it below
+                    st.session_state["stop_listener_requested"] = False
+                    st.session_state["last_mic_transcript"] = ""
                     if not IS_RENDER and SR_AVAILABLE and thread_key not in GLOBAL_THREADS:
                         id_token = st.session_state.get("idToken", "")
                         t = threading.Thread(
@@ -575,26 +528,24 @@ def render_emergency():
                         t.start()
                 st.rerun()
                 
-            if is_listening:
+            # Show mic component when actively listening OR when stop was just requested (to finalize upload)
+            stop_requested = st.session_state.get("stop_listener_requested", False)
+
+            if is_listening or stop_requested:
                 import streamlit.components.v1 as components
                 import json
 
-                # Check if browser mic already triggered a panic via query param
                 q = st.query_params
                 if q.get("panic") == "1":
-                    # Already handled at top of render_emergency — just rerun to pick it up
                     st.rerun()
 
-                # Setup distress keywords
-                distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "stop", "bachao bachao", "madad"]
+                distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "bachao bachao", "madad"]
                 if safe_word:
                     distress_keywords.append(safe_word.lower())
 
                 keywords_js = json.dumps(distress_keywords)
                 disp_safe_word = safe_word if safe_word else "None"
-
-                # Get the current page URL to append panic params
-                current_url_js = "window.top.location.href.split('?')[0]"
+                stop_mode_js = "true" if stop_requested else "false"
 
                 components.html(
                     f"""
@@ -604,147 +555,121 @@ def render_emergency():
                         <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
                         <style>
                             body {{ margin:0; padding:0; background:transparent; }}
-                            .mic-box {{
-                                display: flex; align-items: center; gap: 15px; padding: 15px;
-                                background: rgba(255, 59, 48, 0.08); border-radius: 12px;
-                                border: 1px solid rgba(255, 59, 48, 0.3); color: #FFFFFF;
-                                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                            }}
-                            .material-icons-outlined {{ font-size: 32px; color: #FF3B30; animation: pulse-sos 1.5s infinite; }}
-                            @keyframes pulse-sos {{
-                                0% {{ opacity: 0.6; transform: scale(1); }}
-                                50% {{ opacity: 1; transform: scale(1.1); }}
-                                100% {{ opacity: 0.6; transform: scale(1); }}
-                            }}
-                            .status-text {{ font-size: 14px; font-weight: 600; display: block; color: #FF3B30; }}
-                            .sub-text {{ font-size: 12px; color: #9E9EAF; display: block; margin-top: 2px; }}
-                            .error-box {{ background: rgba(255,149,0,0.08); border-color: rgba(255,149,0,0.3); }}
-                            .error-box .material-icons-outlined {{ color: #FF9500; animation: none; }}
-                            .error-box .status-text {{ color: #FF9500; }}
+                            .mic-box {{ display:flex; align-items:center; gap:15px; padding:15px; background:rgba(255,59,48,0.08); border-radius:12px; border:1px solid rgba(255,59,48,0.3); color:#FFFFFF; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }}
+                            .material-icons-outlined {{ font-size:32px; color:#FF3B30; animation:pulse-sos 1.5s infinite; }}
+                            @keyframes pulse-sos {{ 0% {{ opacity:0.6; transform:scale(1); }} 50% {{ opacity:1; transform:scale(1.1); }} 100% {{ opacity:0.6; transform:scale(1); }} }}
+                            .status-text {{ font-size:14px; font-weight:600; display:block; color:#FF3B30; }}
+                            .sub-text {{ font-size:12px; color:#9E9EAF; display:block; margin-top:2px; }}
+                            .error-box {{ background:rgba(255,149,0,0.08); border-color:rgba(255,149,0,0.3); }}
+                            .error-box .material-icons-outlined {{ color:#FF9500; animation:none; }}
+                            .error-box .status-text {{ color:#FF9500; }}
                         </style>
                     </head>
                     <body>
                         <div id="mic_box" class="mic-box">
                             <span id="mic_icon" class="material-icons-outlined">settings_voice</span>
                             <div>
-                                <span class="status-text" id="status_text">🟢 Listening for distress words...</span>
-                                <span class="sub-text" id="sub_text">Say "help", "bachao", or your safe word (<strong>{disp_safe_word}</strong>) to trigger SOS.</span>
+                                <span class="status-text" id="status_text">🟢 Listening — say anything...</span>
+                                <span class="sub-text" id="sub_text">Distress words auto-trigger SOS. Safe word: <strong>{disp_safe_word}</strong>. Or click Stop Listener.</span>
                             </div>
                         </div>
                         <script>
-                            const BACKEND_URL = "{BACKEND_URL}";
-                            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                            const micBox = document.getElementById("mic_box");
-                            const statusText = document.getElementById("status_text");
-                            const subText = document.getElementById("sub_text");
-                            const micIcon = document.getElementById("mic_icon");
-                            const distressKeywords = {keywords_js};
-
-                            // MediaRecorder for capturing audio to send as voice message
-                            let mediaRecorder = null;
-                            let audioChunks = [];
+                            var BACKEND_URL = "{BACKEND_URL}";
+                            var STOP_MODE = {stop_mode_js};
+                            var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                            var micBox = document.getElementById("mic_box");
+                            var statusText = document.getElementById("status_text");
+                            var subText = document.getElementById("sub_text");
+                            var micIcon = document.getElementById("mic_icon");
+                            var distressKeywords = {keywords_js};
+                            var mediaRecorder = null;
+                            var audioChunks = [];
 
                             function startAudioCapture(stream) {{
                                 audioChunks = [];
-                                try {{
-                                    mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'audio/webm' }});
-                                }} catch(e) {{
-                                    mediaRecorder = new MediaRecorder(stream);
-                                }}
-                                mediaRecorder.ondataavailable = function(e) {{
-                                    if (e.data && e.data.size > 0) audioChunks.push(e.data);
-                                }};
-                                mediaRecorder.start(1000); // collect chunks every 1s
+                                try {{ mediaRecorder = new MediaRecorder(stream, {{mimeType:'audio/webm'}}); }}
+                                catch(e) {{ mediaRecorder = new MediaRecorder(stream); }}
+                                mediaRecorder.ondataavailable = function(e) {{ if(e.data && e.data.size>0) audioChunks.push(e.data); }};
+                                mediaRecorder.start(1000);
                             }}
 
-                            // Upload audio blob to backend, returns audio_url and filename via callback
-                            function uploadAudioAndNavigate(transcript) {{
-                                statusText.innerText = "🚨 PANIC DETECTED — uploading voice clip...";
-                                
+                            function uploadAndNavigate(transcript) {{
+                                statusText.innerText = "⏳ Uploading voice clip...";
                                 function navigate(audioUrl, filename) {{
-                                    const base = window.top.location.href.split('?')[0];
-                                    const params = new URLSearchParams(window.top.location.search);
-                                    params.set('panic', '1');
-                                    params.set('transcript', transcript);
-                                    if (audioUrl) params.set('audio_url', audioUrl);
-                                    if (filename) params.set('audio_filename', filename);
+                                    var base = window.top.location.href.split('?')[0];
+                                    var params = new URLSearchParams(window.top.location.search);
+                                    params.set('panic','1');
+                                    params.set('transcript', transcript || 'voice sos triggered');
+                                    if(audioUrl) params.set('audio_url', audioUrl);
+                                    if(filename) params.set('audio_filename', filename);
                                     window.top.location.href = base + '?' + params.toString();
                                 }}
-
-                                if (mediaRecorder && audioChunks.length > 0) {{
-                                    if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+                                if(mediaRecorder && audioChunks.length > 0) {{
+                                    if(mediaRecorder.state !== 'inactive') mediaRecorder.stop();
                                     setTimeout(function() {{
-                                        const blob = new Blob(audioChunks, {{ type: 'audio/webm' }});
-                                        const formData = new FormData();
-                                        formData.append('file', blob, 'sos_voice.webm');
-                                        fetch(BACKEND_URL.replace('/api', '') + '/api/sos/upload-audio', {{
-                                            method: 'POST',
-                                            body: formData
-                                        }})
-                                        .then(r => r.json())
-                                        .then(data => navigate(data.audio_url || '', data.filename || ''))
-                                        .catch(() => navigate('', ''));
-                                    }}, 500);
-                                }} else {{
-                                    navigate('', '');
-                                }}
+                                        var blob = new Blob(audioChunks, {{type:'audio/webm'}});
+                                        var fd = new FormData();
+                                        fd.append('file', blob, 'sos_voice.webm');
+                                        fetch(BACKEND_URL.replace('/api','') + '/api/sos/upload-audio', {{method:'POST', body:fd}})
+                                        .then(function(r) {{ return r.json(); }})
+                                        .then(function(d) {{ navigate(d.audio_url||'', d.filename||''); }})
+                                        .catch(function() {{ navigate('',''); }});
+                                    }}, 700);
+                                }} else {{ navigate('',''); }}
                             }}
 
-                            if (!SpeechRecognition) {{
+                            if(!SpeechRecognition) {{
                                 micBox.className = "mic-box error-box";
                                 micIcon.innerText = "warning";
                                 statusText.innerText = "Browser Speech API Unsupported";
-                                subText.innerText = "Use Chrome, Edge, or Safari for voice SOS.";
+                                subText.innerText = "Use Chrome or Edge for voice SOS.";
                             }} else {{
-                                // Request mic access for both speech recognition and audio recording
-                                navigator.mediaDevices.getUserMedia({{ audio: true }})
+                                navigator.mediaDevices.getUserMedia({{audio:true}})
                                 .then(function(stream) {{
                                     startAudioCapture(stream);
-
-                                    let recognition = new SpeechRecognition();
+                                    if(STOP_MODE) {{
+                                        statusText.innerText = "⏹️ Finalizing recording...";
+                                        var lastT = localStorage.getItem('nari_last_transcript') || 'voice sos triggered';
+                                        localStorage.removeItem('nari_last_transcript');
+                                        setTimeout(function() {{ uploadAndNavigate(lastT); }}, 800);
+                                        return;
+                                    }}
+                                    var recognition = new SpeechRecognition();
                                     recognition.continuous = true;
                                     recognition.interimResults = false;
                                     recognition.lang = 'en-IN';
-
                                     recognition.onresult = function(event) {{
-                                        const lastIndex = event.results.length - 1;
-                                        const transcript = event.results[lastIndex][0].transcript.toLowerCase();
-                                        console.log("Heard:", transcript);
-
-                                        let found = false;
-                                        for (const kw of distressKeywords) {{
-                                            if (transcript.includes(kw)) {{ found = true; break; }}
+                                        var idx = event.results.length - 1;
+                                        var transcript = event.results[idx][0].transcript;
+                                        localStorage.setItem('nari_last_transcript', transcript);
+                                        statusText.innerText = '🟢 Heard: "' + transcript + '"';
+                                        var lower = transcript.toLowerCase();
+                                        var found = false;
+                                        for(var i=0; i<distressKeywords.length; i++) {{
+                                            if(lower.indexOf(distressKeywords[i]) !== -1) {{ found=true; break; }}
                                         }}
-
-                                        if (found) {{
-                                            recognition.stop();
-                                            uploadAudioAndNavigate(transcript);
-                                        }}
+                                        if(found) {{ recognition.stop(); uploadAndNavigate(transcript); }}
                                     }};
-
                                     recognition.onerror = function(event) {{
-                                        if (event.error === 'not-allowed') {{
+                                        if(event.error === 'not-allowed') {{
                                             micBox.className = "mic-box error-box";
                                             micIcon.innerText = "gpp_bad";
                                             statusText.innerText = "Microphone Permission Blocked";
-                                            subText.innerText = "Allow microphone access in browser settings.";
+                                            subText.innerText = "Allow mic access in browser settings.";
                                         }}
                                     }};
-
                                     recognition.onend = function() {{
-                                        // Only restart if not triggered panic
-                                        if (statusText.innerText.includes("Listening")) {{
+                                        if(statusText.innerText.indexOf("🟢") !== -1) {{
                                             try {{ recognition.start(); }} catch(e) {{}}
                                         }}
                                     }};
-
                                     try {{ recognition.start(); }} catch(e) {{}}
                                 }})
-                                .catch(function(err) {{
+                                .catch(function() {{
                                     micBox.className = "mic-box error-box";
                                     micIcon.innerText = "gpp_bad";
                                     statusText.innerText = "Microphone Permission Blocked";
-                                    subText.innerText = "Allow microphone access in browser settings.";
+                                    subText.innerText = "Allow mic access in browser settings.";
                                 }});
                             }}
                         </script>
