@@ -102,17 +102,19 @@ def trigger_sos(
             if "Live Audio Alert:" in situation_text:
                 parts = situation_text.split("Live Audio Alert:")
                 audio_link = parts[-1].strip()
-                audio_part = f"\n- AUDIO ALERT: {audio_link}"
-                
+                audio_part = f"\n- 🎙️ VOICE CLIP: {audio_link}"
+
             if "Voice SOS trigger:" in situation_text:
                 spoken_threat = situation_text.split("Voice SOS trigger:")[-1].split("\n")[0].replace("'", "").strip()
-                risk_label = f"Voice SOS ('{spoken_threat}')"
+                risk_label = f"Voice SOS"
+                spoken_line = f"\n- SPOKEN: \"{spoken_threat}\""
             else:
                 risk_label = "Voice SOS (Manually Stopped)"
-            
+                spoken_line = ""
+
             sms_body = (
                 f"🚨 NARI SOS ALERT:\n"
-                f"- RISK: {risk_label}\n"
+                f"- RISK: {risk_label}{spoken_line}\n"
                 f"- WHERE: {location_name} ({request.latitude:.4f}, {request.longitude:.4f})\n"
                 f"- TIME: {datetime.now().strftime('%H:%M')}\n"
                 f"- DETAILS: Battery {request.battery_level}%\n"
@@ -169,9 +171,10 @@ def upload_sos_audio(request: Request, file: UploadFile = File(...)):
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        # Dynamically resolve server host IP to allow remote contacts to play the audio
+        # Resolve public URL — use https on Render, http on localhost
         host = request.headers.get("host", "localhost:8000")
-        audio_url = f"http://{host}/static/audio/{filename}"
+        scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
+        audio_url = f"{scheme}://{host}/static/audio/{filename}"
         return {"audio_url": audio_url, "filename": filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
