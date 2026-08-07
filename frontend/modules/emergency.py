@@ -528,7 +528,7 @@ def render_emergency():
                         t.start()
                 st.rerun()
                 
-            # Show mic component when actively listening OR when stop was just requested (to finalize upload)
+            # Show mic component when actively listening OR once when stop was just requested (to finalize upload)
             stop_requested = st.session_state.get("stop_listener_requested", False)
 
             if is_listening or stop_requested:
@@ -538,6 +538,10 @@ def render_emergency():
                 q = st.query_params
                 if q.get("panic") == "1":
                     st.rerun()
+
+                # Clear stop flag immediately so it only fires STOP_MODE once
+                if stop_requested:
+                    st.session_state["stop_listener_requested"] = False
 
                 distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "bachao bachao", "madad"]
                 if safe_word:
@@ -614,7 +618,7 @@ def render_emergency():
                                         .then(function(r) {{ return r.json(); }})
                                         .then(function(d) {{ navigate(d.audio_url||'', d.filename||''); }})
                                         .catch(function() {{ navigate('',''); }});
-                                    }}, 700);
+                                    }}, 300);
                                 }} else {{ navigate('',''); }}
                             }}
 
@@ -631,7 +635,7 @@ def render_emergency():
                                         statusText.innerText = "⏹️ Finalizing recording...";
                                         var lastT = localStorage.getItem('nari_last_transcript') || 'voice sos triggered';
                                         localStorage.removeItem('nari_last_transcript');
-                                        setTimeout(function() {{ uploadAndNavigate(lastT); }}, 800);
+                                        setTimeout(function() {{ uploadAndNavigate(lastT); }}, 300);
                                         return;
                                     }}
                                     var recognition = new SpeechRecognition();
