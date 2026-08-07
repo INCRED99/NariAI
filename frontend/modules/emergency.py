@@ -169,6 +169,39 @@ def render_emergency():
         GLOBAL_THREADS.pop(f"voice_thread_{uid}", None)
         st.rerun()
 
+    # Check browser mic panic trigger from URL query params (set by JS Web Speech API)
+    _q = st.query_params
+    if _q.get("panic") == "1":
+        _transcript = _q.get("transcript", "distress detected")
+        # Clear params to prevent re-triggering on subsequent rerenders
+        st.query_params.pop("panic", None)
+        st.query_params.pop("transcript", None)
+        # Only trigger if not already in SOS state
+        if not st.session_state.get("sos_sent", False):
+            _user_lat = st.session_state.get("current_lat", 28.6273)
+            _user_lng = st.session_state.get("current_lng", 77.3725)
+            _loc = st.session_state.get("current_address", "Your Location")
+            _payload = {
+                "situation": f"Voice SOS listener detected: '{_transcript}'",
+                "location_name": _loc,
+                "latitude": _user_lat,
+                "longitude": _user_lng,
+                "battery_level": 85
+            }
+            _res = api_post("/sos", _payload)
+            if _res and _res.get("success"):
+                st.session_state["sos_sms_body"] = _res.get("sms_body", "")
+                st.session_state["sos_sent"] = True
+                st.session_state["wa_opened"] = False
+                st.session_state["voice_listener_active"] = False
+            else:
+                # Backend failed — still show SOS screen with a basic message
+                st.session_state["sos_sms_body"] = f"🚨 EMERGENCY! Distress detected: '{_transcript}'. Location: {_loc}."
+                st.session_state["sos_sent"] = True
+                st.session_state["wa_opened"] = False
+                st.session_state["voice_listener_active"] = False
+            st.rerun()
+
     # Page Header
     st.markdown(
         """
@@ -535,30 +568,8 @@ def render_emergency():
                 # Check if browser mic already triggered a panic via query param
                 q = st.query_params
                 if q.get("panic") == "1":
-                    transcript = q.get("transcript", "distress detected")
-                    # Clear the param immediately to avoid re-triggering on rerun
-                    st.query_params.pop("panic", None)
-                    st.query_params.pop("transcript", None)
-
-                    last_mic_trigger = st.session_state.get("last_mic_trigger_time", 0)
-                    now_ts = int(time.time() * 1000)
-                    if now_ts > last_mic_trigger + 3000:
-                        st.session_state["last_mic_trigger_time"] = now_ts
-                        st.toast(f"🚨 Vocal Panic Detected: '{transcript}'", icon="🚨")
-                        payload = {
-                            "situation": f"Voice SOS listener detected: '{transcript}'",
-                            "location_name": calc_loc_val,
-                            "latitude": user_lat,
-                            "longitude": user_lng,
-                            "battery_level": 85
-                        }
-                        res = api_post("/sos", payload)
-                        if res and res.get("success"):
-                            st.session_state["sos_sms_body"] = res.get("sms_body", "")
-                            st.session_state["sos_sent"] = True
-                            st.session_state["wa_opened"] = False
-                            st.session_state["voice_listener_active"] = False
-                            st.rerun()
+                    # Already handled at top of render_emergency — just rerun to pick it up
+                    st.rerun()
 
                 # Setup distress keywords
                 distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "stop", "bachao bachao", "madad"]
