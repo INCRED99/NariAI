@@ -269,51 +269,25 @@ def render_emergency():
                 clean = "91" + clean[1:]
             return clean
 
-        # Generate universal API chat links for each valid contact
+        # Build wa.me links — most reliable universal WhatsApp link (opens app on desktop/mobile, WhatsApp Web as fallback)
         wa_urls = []
         for c in contacts:
             ph = clean_phone(c.get("phone", ""))
             if ph:
                 encoded = urllib.parse.quote(body_sms)
-                wa_urls.append((c.get("name", "Contact"), c.get("relation", "Emergency Contact"), f"https://api.whatsapp.com/send?phone={ph}&text={encoded}"))
+                wa_urls.append((c.get("name", "Contact"), c.get("relation", "Emergency Contact"), f"https://wa.me/{ph}?text={encoded}"))
                 
-        # Fallback to general share protocol if no valid contacts were resolved
+        # Fallback if no valid contacts
         if not wa_urls:
             encoded = urllib.parse.quote(body_sms)
-            wa_urls = [("Emergency Share", "Broadcast", f"https://api.whatsapp.com/send?text={encoded}")]
+            wa_urls = [("Emergency Share", "Broadcast", f"https://wa.me/?text={encoded}")]
 
-        # Automatically launch WhatsApp once when the active SOS screen loads
+        # Auto-open first contact on load — inject hidden anchor links into parent window via postMessage
         if not st.session_state.get("wa_opened", False):
             st.session_state["wa_opened"] = True
+            st.toast("Click the WhatsApp buttons below to send alerts.", icon="💬")
             
-            # Build https:// WhatsApp Web URLs (works on all browsers/platforms, including hosted web apps)
-            auto_wa_urls = []
-            for c in contacts:
-                ph = clean_phone(c.get("phone", ""))
-                if ph:
-                    encoded = urllib.parse.quote(body_sms)
-                    auto_wa_urls.append(f"https://api.whatsapp.com/send?phone={ph}&text={encoded}")
-            if not auto_wa_urls:
-                encoded = urllib.parse.quote(body_sms)
-                auto_wa_urls.append(f"https://api.whatsapp.com/send?text={encoded}")
-                
-            import streamlit.components.v1 as components
-            # Use window.open(_blank) so browser opens WhatsApp Web in a new tab (works for hosted web apps)
-            js = "<script>"
-            for i, url in enumerate(auto_wa_urls):
-                delay = i * 2500  # 2.5 seconds delay between contacts to avoid popup blocker on rapid opens
-                js += f"""
-                setTimeout(function() {{
-                    try {{
-                        window.open("{url}", "_blank");
-                    }} catch(e) {{
-                        console.log("WhatsApp open error:", e);
-                    }}
-                }}, {delay});
-                """
-            js += "</script>"
-            components.html(js, height=0)
-            st.toast("Automatically launching WhatsApp...", icon="💬")
+        st.info("⚠️ Browsers block automatic popups. Click the green **Send Alert** buttons below to open WhatsApp for each contact.", icon="💬")
             
         # Display styled Dispatch Hub
         st.markdown(
@@ -332,19 +306,22 @@ def render_emergency():
         )
         
         for name, rel, url in wa_urls:
-            st.markdown(
+            import streamlit.components.v1 as components
+            components.html(
                 f"""
-                <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:8px; padding:12px 18px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:12px 18px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
                     <div>
-                        <strong style="color:var(--text-primary); font-size:14px; display:block;">{name}</strong>
-                        <span style="font-size:11px; color:var(--text-secondary);">{rel}</span>
+                        <strong style="color:#FFFFFF; font-size:14px; display:block;">{name}</strong>
+                        <span style="font-size:11px; color:#9E9EAF;">{rel}</span>
                     </div>
-                    <a href="{url}" target="_blank" style="background-color:#25D366; color:white; padding:8px 16px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:600; display:inline-block; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#128C7E'" onmouseout="this.style.backgroundColor='#25D366'">
-                        💬 Send Alert
+                    <a href="{url}" target="_blank" rel="noopener noreferrer"
+                       style="background-color:#25D366; color:white; padding:10px 20px; border-radius:6px; text-decoration:none; font-size:13px; font-weight:600; display:inline-block; cursor:pointer;">
+                        💬 Send on WhatsApp
                     </a>
                 </div>
                 """,
-                unsafe_allow_html=True
+                height=70,
+                scrolling=False
             )
             
         st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
