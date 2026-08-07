@@ -426,7 +426,8 @@ def render_emergency():
             st.session_state["sos_sent"] = False
             st.session_state["sos_sms_body"] = ""
             st.session_state["wa_opened"] = False
-            st.rerun()        st.markdown('</div>', unsafe_allow_html=True)
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
     else:
         col1, col2 = st.columns(2, gap="large")
         
