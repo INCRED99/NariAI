@@ -1,19 +1,34 @@
 import streamlit as st
+import os
 import time
 from datetime import datetime
 import threading
 import logging
 import requests
-import speech_recognition as sr
 from frontend.modules.api_client import api_post, api_get, api_post_file, BACKEND_URL
 
 logger = logging.getLogger("nari.emergency")
 
+IS_RENDER = os.environ.get("RENDER") == "true"
 GLOBAL_THREADS = {}
 GLOBAL_PANIC_TRIGGERS = {}
 LATEST_MICROPHONE_AUDIO = {}
 
+# speech_recognition requires pyaudio (system mic) — only import on non-Render environments
+if not IS_RENDER:
+    try:
+        import speech_recognition as sr
+        SR_AVAILABLE = True
+    except ImportError:
+        SR_AVAILABLE = False
+        logger.warning("speech_recognition/pyaudio not available. Server-side mic listener disabled.")
+else:
+    SR_AVAILABLE = False
+
 def bg_mic_listener(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token):
+    if not SR_AVAILABLE:
+        logger.warning("bg_mic_listener called but speech_recognition is not available. Skipping.")
+        return
     import traceback
     try:
         logger.info("bg_mic_listener thread execution starting...")
@@ -271,26 +286,28 @@ def render_emergency():
         if not st.session_state.get("wa_opened", False):
             st.session_state["wa_opened"] = True
             
+            # Build https:// WhatsApp Web URLs (works on all browsers/platforms, including hosted web apps)
             auto_wa_urls = []
             for c in contacts:
                 ph = clean_phone(c.get("phone", ""))
                 if ph:
                     encoded = urllib.parse.quote(body_sms)
-                    auto_wa_urls.append(f"whatsapp://send?phone={ph}&text={encoded}")
+                    auto_wa_urls.append(f"https://api.whatsapp.com/send?phone={ph}&text={encoded}")
             if not auto_wa_urls:
                 encoded = urllib.parse.quote(body_sms)
-                auto_wa_urls.append(f"whatsapp://send?text={encoded}")
+                auto_wa_urls.append(f"https://api.whatsapp.com/send?text={encoded}")
                 
             import streamlit.components.v1 as components
+            # Use window.open(_blank) so browser opens WhatsApp Web in a new tab (works for hosted web apps)
             js = "<script>"
             for i, url in enumerate(auto_wa_urls):
-                delay = i * 2000  # 2 seconds delay between contacts
+                delay = i * 2500  # 2.5 seconds delay between contacts to avoid popup blocker on rapid opens
                 js += f"""
                 setTimeout(function() {{
                     try {{
-                        window.location.href = "{url}";
+                        window.open("{url}", "_blank");
                     }} catch(e) {{
-                        console.log(e);
+                        console.log("WhatsApp open error:", e);
                     }}
                 }}, {delay});
                 """
@@ -430,47 +447,58 @@ def render_emergency():
                     st.session_state["voice_listener_active"] = False
                     GLOBAL_THREADS.pop(thread_key, None)
                     
-                    # Upload the last captured voice audio clip if available
-                    wav_data = LATEST_MICROPHONE_AUDIO.pop(uid, None)
-                    audio_url = ""
-                    filename = ""
-                    if wav_data:
-                        try:
-                            import requests
-                            from frontend.modules.api_client import BACKEND_URL
-                            headers = {}
-                            id_token = st.session_state.get("idToken")
-                            if id_token:
-                                headers["Authorization"] = f"Bearer {id_token}"
-                            files = {"file": ("sos_audio.wav", wav_data, "audio/wav")}
-                            upload_res = requests.post(f"{BACKEND_URL}/sos/upload-audio", files=files, headers=headers, timeout=5)
-                            if upload_res.status_code == 200:
-                                upload_data = upload_res.json()
-                                audio_url = upload_data.get("audio_url", "")
-                                filename = upload_data.get("filename", "")
-                        except Exception as upload_err:
-                            logger.error(f"Failed uploading final audio clip: {upload_err}")
+                    if not IS_RENDER:
+                        # Upload the last captured voice audio clip if available (server-mic mode only)
+                        wav_data = LATEST_MICROPHONE_AUDIO.pop(uid, None)
+                        audio_url = ""
+                        filename = ""
+                        if wav_data:
+                            try:
+                                import requests
+                                from frontend.modules.api_client import BACKEND_URL
+                                headers = {}
+                                id_token = st.session_state.get("idToken")
+                                if id_token:
+                                    headers["Authorization"] = f"Bearer {id_token}"
+                                files = {"file": ("sos_audio.wav", wav_data, "audio/wav")}
+                                upload_res = requests.post(f"{BACKEND_URL}/sos/upload-audio", files=files, headers=headers, timeout=5)
+                                if upload_res.status_code == 200:
+                                    upload_data = upload_res.json()
+                                    audio_url = upload_data.get("audio_url", "")
+                                    filename = upload_data.get("filename", "")
+                            except Exception as upload_err:
+                                logger.error(f"Failed uploading final audio clip: {upload_err}")
+                                
+                        situation_text = "Voice listener stopped manually by user (SOS Alert)."
+                        if audio_url:
+                            situation_text += f"\nLive Audio Alert: {audio_url}"
                             
-                    situation_text = "Voice listener stopped manually by user (SOS Alert)."
-                    if audio_url:
-                        situation_text += f"\nLive Audio Alert: {audio_url}"
-                        
-                    payload = {
-                        "situation": situation_text,
-                        "location_name": calc_loc_val,
-                        "latitude": user_lat,
-                        "longitude": user_lng,
-                        "battery_level": 85
-                    }
-                    res = api_post("/sos", payload)
-                    if res and res.get("success"):
-                        st.session_state["sos_sms_body"] = res.get("sms_body", "")
-                        st.session_state["sos_sent"] = True
-                        st.session_state["wa_opened"] = False
-                        st.session_state["audio_filename"] = filename
+                        payload = {
+                            "situation": situation_text,
+                            "location_name": calc_loc_val,
+                            "latitude": user_lat,
+                            "longitude": user_lng,
+                            "battery_level": 85
+                        }
+                        res = api_post("/sos", payload)
+                        if res and res.get("success"):
+                            st.session_state["sos_sms_body"] = res.get("sms_body", "")
+                            st.session_state["sos_sent"] = True
+                            st.session_state["wa_opened"] = False
+                            st.session_state["audio_filename"] = filename
                 else:
                     # User clicked "Activate Safety Listener"
                     st.session_state["voice_listener_active"] = True
+                    # On Render (hosted), skip server-side mic thread — browser Web Speech API handles it below
+                    if not IS_RENDER and SR_AVAILABLE and thread_key not in GLOBAL_THREADS:
+                        id_token = st.session_state.get("idToken", "")
+                        t = threading.Thread(
+                            target=bg_mic_listener,
+                            args=(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token),
+                            daemon=True
+                        )
+                        GLOBAL_THREADS[thread_key] = t
+                        t.start()
                 st.rerun()
                 
             if is_listening:
