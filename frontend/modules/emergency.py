@@ -503,49 +503,53 @@ def render_emergency():
             
             if st.button(btn_label, key="toggle_voice_listener", width="stretch", type="primary" if is_listening else "secondary"):
                 if is_listening:
-                    # User clicked "Stop Listener" -> trigger SOS immediately!
+                    # User clicked "Stop Listener" -> trigger SOS immediately
                     st.session_state["voice_listener_active"] = False
                     GLOBAL_THREADS.pop(thread_key, None)
-                    
-                    if not IS_RENDER:
-                        # Upload the last captured voice audio clip if available (server-mic mode only)
+
+                    audio_url = ""
+                    filename = ""
+
+                    # Try to upload captured audio only if server-mic was active
+                    if not IS_RENDER and SR_AVAILABLE:
                         wav_data = LATEST_MICROPHONE_AUDIO.pop(uid, None)
-                        audio_url = ""
-                        filename = ""
                         if wav_data:
                             try:
-                                import requests
-                                from frontend.modules.api_client import BACKEND_URL
+                                import requests as _req
                                 headers = {}
                                 id_token = st.session_state.get("idToken")
                                 if id_token:
                                     headers["Authorization"] = f"Bearer {id_token}"
                                 files = {"file": ("sos_audio.wav", wav_data, "audio/wav")}
-                                upload_res = requests.post(f"{BACKEND_URL}/sos/upload-audio", files=files, headers=headers, timeout=5)
+                                upload_res = _req.post(f"{BACKEND_URL}/sos/upload-audio", files=files, headers=headers, timeout=5)
                                 if upload_res.status_code == 200:
                                     upload_data = upload_res.json()
                                     audio_url = upload_data.get("audio_url", "")
                                     filename = upload_data.get("filename", "")
                             except Exception as upload_err:
-                                logger.error(f"Failed uploading final audio clip: {upload_err}")
-                                
-                        situation_text = "Voice listener stopped manually by user (SOS Alert)."
-                        if audio_url:
-                            situation_text += f"\nLive Audio Alert: {audio_url}"
-                            
-                        payload = {
-                            "situation": situation_text,
-                            "location_name": calc_loc_val,
-                            "latitude": user_lat,
-                            "longitude": user_lng,
-                            "battery_level": 85
-                        }
-                        res = api_post("/sos", payload)
-                        if res and res.get("success"):
-                            st.session_state["sos_sms_body"] = res.get("sms_body", "")
-                            st.session_state["sos_sent"] = True
-                            st.session_state["wa_opened"] = False
-                            st.session_state["audio_filename"] = filename
+                                logger.error(f"Failed uploading audio: {upload_err}")
+
+                    # Always trigger SOS regardless of platform or audio
+                    situation_text = "Voice listener stopped by user — SOS Alert triggered."
+                    if audio_url:
+                        situation_text += f"\nLive Audio Alert: {audio_url}"
+
+                    payload = {
+                        "situation": situation_text,
+                        "location_name": calc_loc_val,
+                        "latitude": user_lat,
+                        "longitude": user_lng,
+                        "battery_level": 85
+                    }
+                    res = api_post("/sos", payload)
+                    if res and res.get("success"):
+                        st.session_state["sos_sms_body"] = res.get("sms_body", "")
+                        st.session_state["audio_filename"] = filename
+                    else:
+                        # Fallback message if backend call fails
+                        st.session_state["sos_sms_body"] = f"🚨 EMERGENCY! SOS triggered at {calc_loc_val}. Please send help immediately!"
+                    st.session_state["sos_sent"] = True
+                    st.session_state["wa_opened"] = False
                 else:
                     # User clicked "Activate Safety Listener"
                     st.session_state["voice_listener_active"] = True
