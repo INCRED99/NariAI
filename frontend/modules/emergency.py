@@ -291,7 +291,6 @@ def render_emergency():
         # Build contact rows HTML
         contact_rows_html = ""
         for i, (name, rel, url) in enumerate(wa_urls):
-            link_id = f"wa_link_{i}"
             contact_rows_html += f"""
             <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1);
                         border-radius:8px; padding:12px 18px; margin-bottom:10px;
@@ -300,8 +299,8 @@ def render_emergency():
                     <strong style="color:#FFFFFF; font-size:14px; display:block;">{name}</strong>
                     <span style="font-size:11px; color:#9E9EAF;">{rel}</span>
                 </div>
-                <a id="{link_id}" href="{url}"
-                   onclick="window.top.open(this.href, '_blank'); return false;"
+                <a href="{url}"
+                   onclick="window.top.location.href=this.href; return false;"
                    style="background-color:#25D366; color:white; padding:10px 20px;
                           border-radius:6px; text-decoration:none; font-size:13px;
                           font-weight:600; display:inline-block; cursor:pointer;">
@@ -309,14 +308,12 @@ def render_emergency():
                 </a>
             </div>"""
 
-        # Auto-open: use window.top.open() — called from top frame context, never blocked
-        auto_open_js = ""
-        if auto_open:
-            for i, (name, rel, url) in enumerate(wa_urls):
-                auto_open_js += f"""
-                setTimeout(function() {{
-                    window.top.open("{url}", "_blank");
-                }}, {i * 1800});"""
+        # Auto-navigate: redirect the top window to first contact's WhatsApp URL
+        # This is the only browser-safe auto-open — no popup, no permission needed
+        auto_nav_js = ""
+        if auto_open and wa_urls:
+            first_url = wa_urls[0][2]
+            auto_nav_js = f"window.top.location.href = '{first_url}';"
 
         total_height = 80 + len(wa_urls) * 75
         components.html(
@@ -328,12 +325,12 @@ def render_emergency():
                             border:1px solid rgba(37,211,102,0.3);margin-bottom:12px;">
                     <strong style="color:#25D366;font-size:14px;">💬 WhatsApp Dispatch Hub</strong>
                     <p style="margin:4px 0 0 0;font-size:12px;color:#9E9EAF;">
-                        {"Opening WhatsApp automatically..." if auto_open else "Click a button below to send the alert."}
+                        {"Redirecting to WhatsApp... press Back to return to the app." if auto_open else "Click a button below to open WhatsApp with the pre-filled alert."}
                     </p>
                 </div>
                 {contact_rows_html}
                 <script>
-                    {auto_open_js}
+                    {auto_nav_js}
                 </script>
             </body>
             </html>""",
