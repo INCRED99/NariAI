@@ -282,47 +282,63 @@ def render_emergency():
             encoded = urllib.parse.quote(body_sms)
             wa_urls = [("Emergency Share", "Broadcast", f"https://wa.me/?text={encoded}")]
 
-        # Auto-open first contact on load — inject hidden anchor links into parent window via postMessage
-        if not st.session_state.get("wa_opened", False):
+        # Build the full dispatch hub in one components.html so auto-click happens inside iframe context
+        # (iframe onload auto-click is not blocked by popup blockers — it's treated as iframe navigation)
+        import streamlit.components.v1 as components
+
+        auto_open = not st.session_state.get("wa_opened", False)
+        if auto_open:
             st.session_state["wa_opened"] = True
-            st.toast("Click the WhatsApp buttons below to send alerts.", icon="💬")
-            
-        st.info("⚠️ Browsers block automatic popups. Click the green **Send Alert** buttons below to open WhatsApp for each contact.", icon="💬")
-            
-        # Display styled Dispatch Hub
-        st.markdown(
-            """
-            <div style="background:rgba(37, 211, 102, 0.08); border-radius:12px; padding:20px; border:1px solid rgba(37, 211, 102, 0.3); margin-bottom:20px;">
-                <h4 style="margin:0 0 10px 0; color:#25D366; display:flex; align-items:center; gap:8px;">
-                    <span class="material-icons-outlined" style="color:#25D366; font-size:24px; animation: none;">chat</span>
-                    WhatsApp Dispatch Hub
-                </h4>
-                <p style="margin:0 0 15px 0; font-size:13px; color:var(--text-secondary); line-height:1.4;">
-                    Click below to securely transmit pre-filled distress coordinates and summaries to your emergency contacts via WhatsApp.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        
-        for name, rel, url in wa_urls:
-            import streamlit.components.v1 as components
-            components.html(
-                f"""
-                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:12px 18px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-                    <div>
-                        <strong style="color:#FFFFFF; font-size:14px; display:block;">{name}</strong>
-                        <span style="font-size:11px; color:#9E9EAF;">{rel}</span>
-                    </div>
-                    <a href="{url}" target="_blank" rel="noopener noreferrer"
-                       style="background-color:#25D366; color:white; padding:10px 20px; border-radius:6px; text-decoration:none; font-size:13px; font-weight:600; display:inline-block; cursor:pointer;">
-                        💬 Send on WhatsApp
-                    </a>
+
+        # Build contact rows HTML + hidden auto-click anchors
+        contact_rows_html = ""
+        auto_click_js = ""
+        for i, (name, rel, url) in enumerate(wa_urls):
+            link_id = f"wa_link_{i}"
+            contact_rows_html += f"""
+            <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1);
+                        border-radius:8px; padding:12px 18px; margin-bottom:10px;
+                        display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <strong style="color:#FFFFFF; font-size:14px; display:block;">{name}</strong>
+                    <span style="font-size:11px; color:#9E9EAF;">{rel}</span>
                 </div>
-                """,
-                height=70,
-                scrolling=False
-            )
+                <a id="{link_id}" href="{url}" target="_blank" rel="noopener noreferrer"
+                   style="background-color:#25D366; color:white; padding:10px 20px;
+                          border-radius:6px; text-decoration:none; font-size:13px;
+                          font-weight:600; display:inline-block; cursor:pointer;">
+                    💬 Send on WhatsApp
+                </a>
+            </div>"""
+            if auto_open:
+                # Stagger each contact by 1.5s so browser doesn't batch-block them
+                auto_click_js += f"""
+                setTimeout(function() {{
+                    document.getElementById('{link_id}').click();
+                }}, {i * 1500});"""
+
+        total_height = 80 + len(wa_urls) * 75
+        components.html(
+            f"""<!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"></head>
+            <body style="margin:0; padding:0; background:transparent; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+                <div style="background:rgba(37,211,102,0.08); border-radius:10px; padding:14px 18px;
+                            border:1px solid rgba(37,211,102,0.3); margin-bottom:12px;">
+                    <strong style="color:#25D366; font-size:14px;">💬 WhatsApp Dispatch Hub</strong>
+                    <p style="margin:4px 0 0 0; font-size:12px; color:#9E9EAF;">
+                        {"Opening WhatsApp automatically..." if auto_open else "Click below to send pre-filled distress alerts."}
+                    </p>
+                </div>
+                {contact_rows_html}
+                <script>
+                    {auto_click_js}
+                </script>
+            </body>
+            </html>""",
+            height=total_height,
+            scrolling=False
+        )
             
         st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
         
