@@ -175,12 +175,12 @@ def render_emergency():
         _transcript = _q.get("transcript", "distress detected")
         _audio_url = _q.get("audio_url", "")
         _audio_filename = _q.get("audio_filename", "")
-        # Clear params to prevent re-triggering on subsequent rerenders
         st.query_params.pop("panic", None)
         st.query_params.pop("transcript", None)
         st.query_params.pop("audio_url", None)
         st.query_params.pop("audio_filename", None)
-        # Only trigger if not already in SOS state
+        # Store transcript for use if Stop Listener is clicked after detection
+        st.session_state["last_mic_transcript"] = _transcript
         if not st.session_state.get("sos_sent", False):
             _user_lat = st.session_state.get("current_lat", 28.6273)
             _user_lng = st.session_state.get("current_lng", 77.3725)
@@ -245,9 +245,6 @@ def render_emergency():
     user_lat = st.session_state.get("current_lat", 28.6273)
     user_lng = st.session_state.get("current_lng", 77.3725)
     calc_loc_val = st.session_state.get("current_address", "Your Location")
-    if "connaught" in calc_loc_val.lower() or "cp" in calc_loc_val.lower():
-        user_lat = 28.6304
-        user_lng = 77.2177
 
 
 
@@ -538,7 +535,12 @@ def render_emergency():
                                 logger.error(f"Failed uploading audio: {upload_err}")
 
                     # Always trigger SOS regardless of platform or audio
-                    situation_text = "Voice listener stopped by user — SOS Alert triggered."
+                    # Pass transcript from session state if browser mic detected words
+                    spoken = st.session_state.get("last_mic_transcript", "")
+                    if spoken:
+                        situation_text = f"Voice SOS trigger: '{spoken}'\nVoice listener stopped by user."
+                    else:
+                        situation_text = "Voice SOS trigger: 'manual stop'\nVoice listener stopped by user."
                     if audio_url:
                         situation_text += f"\nLive Audio Alert: {audio_url}"
 
