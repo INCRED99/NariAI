@@ -618,16 +618,15 @@ def render_emergency():
                                 statusText.innerText = "Browser Speech API Unsupported";
                                 subText.innerText = "Use Chrome or Edge for voice SOS.";
                             }} else {{
-                                navigator.mediaDevices.getUserMedia({{audio:true}})
-                                .then(function(stream) {{
-                                    // Audio recording start removed
-                                    if(STOP_MODE) {{
-                                        statusText.innerText = "⏹️ Finalizing recording...";
-                                        var lastT = localStorage.getItem('nari_last_transcript') || 'voice sos triggered';
-                                        localStorage.removeItem('nari_last_transcript');
-                                        setTimeout(function() {{ uploadAndNavigate(lastT); }}, 300);
-                                        return;
-                                    }}
+                                // STOP_MODE: finalize and trigger SOS with last transcript
+                                if(STOP_MODE) {{
+                                    statusText.innerText = "⏹️ Finalizing...";
+                                    var lastT = localStorage.getItem('nari_last_transcript') || 'voice sos triggered';
+                                    localStorage.removeItem('nari_last_transcript');
+                                    setTimeout(function() {{ uploadAndNavigate(lastT); }}, 300);
+                                }} else {{
+                                    // Start SpeechRecognition directly — no getUserMedia needed
+                                    // SpeechRecognition handles its own mic access internally
                                     var recognition = new SpeechRecognition();
                                     recognition.continuous = true;
                                     recognition.interimResults = false;
@@ -654,13 +653,7 @@ def render_emergency():
                                         }}
                                     }};
                                     try {{ recognition.start(); }} catch(e) {{}}
-                                }})
-                                .catch(function() {{
-                                    micBox.className = "mic-box error-box";
-                                    micIcon.innerText = "gpp_bad";
-                                    statusText.innerText = "Microphone Permission Blocked";
-                                    subText.innerText = "Allow mic access in browser settings.";
-                                }});
+                                }}
                             }}
                         </script>
                     </body>
