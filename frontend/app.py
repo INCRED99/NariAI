@@ -56,28 +56,37 @@ from modules.profile import render_profile
 from modules.settings import render_settings
 from modules.incident_reporting import render_incident_reporting
 
-import time as _time
-st.markdown(
-    """
-    <img src="x?t=""" + str(_time.time()) + """" onerror="
-        var url = new URL(window.location.href);
-        if (!url.searchParams.has('lat') && !url.searchParams.has('geo_tried') && navigator.geolocation) {
-            url.searchParams.set('geo_tried', '1');
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    url.searchParams.set('lat', position.coords.latitude);
-                    url.searchParams.set('lng', position.coords.longitude);
-                    window.location.href = url.href;
+import streamlit.components.v1 as components
+components.html("""
+<script>
+try {
+    var pWin = window.parent || window;
+    var url = new URL(pWin.location.href);
+    if (!url.searchParams.has('lat') && !url.searchParams.has('geo_tried')) {
+        var nav = pWin.navigator || navigator;
+        if (nav && nav.geolocation) {
+            nav.geolocation.getCurrentPosition(
+                function(pos) {
+                    url.searchParams.set('lat', pos.coords.latitude);
+                    url.searchParams.set('lng', pos.coords.longitude);
+                    url.searchParams.set('geo_tried', '1');
+                    pWin.location.href = url.href;
                 },
-                function(error) {
-                    window.location.href = url.href;
+                function(err) {
+                    url.searchParams.set('geo_tried', '1');
+                    pWin.location.href = url.href;
                 },
-                {enableHighAccuracy: true, timeout: 10000, maximumAge: 0}
+                {enableHighAccuracy: true, timeout: 15000, maximumAge: 0}
             );
+        } else {
+            url.searchParams.set('geo_tried', '1');
+            pWin.location.href = url.href;
         }
-    " style="display:none;">
-    """, unsafe_allow_html=True
-)
+    }
+} catch(e) { console.error('Nari Geolocation Error:', e); }
+</script>
+""", height=0)
+
 
 # Check query params for coordinates
 q_params = st.query_params
