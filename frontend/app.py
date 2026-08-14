@@ -56,29 +56,44 @@ from modules.profile import render_profile
 from modules.settings import render_settings
 from modules.incident_reporting import render_incident_reporting
 
-# Geolocation configuration - inject inline script into parent window to request browser geolocation
 st.markdown(
     """
     <img src="x" onerror="
-        const url = new URL(window.location.href);
+        var url = new URL(window.location.href);
         if (!url.searchParams.has('lat') && !url.searchParams.has('geo_tried') && navigator.geolocation) {
             url.searchParams.set('geo_tried', '1');
             navigator.geolocation.getCurrentPosition(
                 function(position) {
                     url.searchParams.set('lat', position.coords.latitude);
                     url.searchParams.set('lng', position.coords.longitude);
-                    window.location.href = url.href;
+                    window.history.pushState(null, '', url.href);
+                    var btns = document.querySelectorAll('button');
+                    for(var i=0; i<btns.length; i++) {
+                        if(btns[i].innerText.indexOf('NariHiddenGeoTrigger') !== -1) {
+                            btns[i].click();
+                            break;
+                        }
+                    }
                 },
                 function(error) {
-                    window.location.href = url.href;
+                    window.history.pushState(null, '', url.href);
+                    var btns = document.querySelectorAll('button');
+                    for(var i=0; i<btns.length; i++) {
+                        if(btns[i].innerText.indexOf('NariHiddenGeoTrigger') !== -1) {
+                            btns[i].click();
+                            break;
+                        }
+                    }
                 },
                 {enableHighAccuracy: true, timeout: 10000, maximumAge: 0}
             );
         }
     " style="display:none;">
-    """,
-    unsafe_allow_html=True
+    <div style='height:0; width:0; overflow:hidden; opacity:0; position:absolute; z-index:-1;'>
+    """, unsafe_allow_html=True
 )
+if st.button("NariHiddenGeoTrigger", key="hidden_geo"): pass
+st.markdown("</div>", unsafe_allow_html=True)
 
 # Check query params for coordinates
 q_params = st.query_params
@@ -95,28 +110,11 @@ if "lat" in q_params and "lng" in q_params:
         if g_res and "address" in g_res:
             st.session_state["current_address"] = g_res["address"]
 
-# Perform IP-based geolocating fallback if coordinates are not available yet
+# Fallback if coordinates are not available yet (e.g. user denied permission or waiting)
 if "current_lat" not in st.session_state:
-    try:
-        import urllib.request
-        import json
-        req = urllib.request.Request("https://ipapi.co/json/", headers={'User-Agent': 'NariSafetyApp/1.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            lat_val = data.get("latitude")
-            lng_val = data.get("longitude")
-            if lat_val and lng_val:
-                st.session_state["current_lat"] = float(lat_val)
-                st.session_state["current_lng"] = float(lng_val)
-                st.session_state["current_address"] = f"{data.get('city', 'New Delhi')}, {data.get('region', 'Delhi')}, {data.get('country_name', 'India')}"
-            else:
-                st.session_state["current_lat"] = 28.6273
-                st.session_state["current_lng"] = 77.3725
-                st.session_state["current_address"] = "Your Location"
-    except Exception:
-        st.session_state["current_lat"] = 28.6273
-        st.session_state["current_lng"] = 77.3725
-        st.session_state["current_address"] = "Your Location"
+    st.session_state["current_lat"] = 28.6273
+    st.session_state["current_lng"] = 77.3725
+    st.session_state["current_address"] = "Your Location"
 
 # Resolve address string using Google Maps reverse-geocoding API if coordinates changed
 if "current_address" not in st.session_state or st.session_state.get("current_address") == "Your Location":
