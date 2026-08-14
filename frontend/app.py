@@ -56,34 +56,39 @@ from modules.profile import render_profile
 from modules.settings import render_settings
 from modules.incident_reporting import render_incident_reporting
 
+import time
 st.markdown(
     """
-    <img src="x" onerror="
-        var url = new URL(window.location.href);
+    <img src="x?t=""" + str(time.time()) + """" onerror="
+        var url = new URL(window.parent.location.href);
         if (!url.searchParams.has('lat') && !url.searchParams.has('geo_tried') && navigator.geolocation) {
             url.searchParams.set('geo_tried', '1');
             navigator.geolocation.getCurrentPosition(
                 function(position) {
                     url.searchParams.set('lat', position.coords.latitude);
                     url.searchParams.set('lng', position.coords.longitude);
-                    window.history.pushState(null, '', url.href);
-                    var btns = document.querySelectorAll('button');
-                    for(var i=0; i<btns.length; i++) {
-                        if(btns[i].innerText.indexOf('NariHiddenGeoTrigger') !== -1) {
-                            btns[i].click();
-                            break;
+                    window.parent.history.pushState(null, '', url.href);
+                    setTimeout(function() {
+                        var btns = window.parent.document.querySelectorAll('button');
+                        for(var i=0; i<btns.length; i++) {
+                            if(btns[i].innerText.indexOf('NariHiddenGeoTrigger') !== -1) {
+                                btns[i].click();
+                                break;
+                            }
                         }
-                    }
+                    }, 1000);
                 },
                 function(error) {
-                    window.history.pushState(null, '', url.href);
-                    var btns = document.querySelectorAll('button');
-                    for(var i=0; i<btns.length; i++) {
-                        if(btns[i].innerText.indexOf('NariHiddenGeoTrigger') !== -1) {
-                            btns[i].click();
-                            break;
+                    window.parent.history.pushState(null, '', url.href);
+                    setTimeout(function() {
+                        var btns = window.parent.document.querySelectorAll('button');
+                        for(var i=0; i<btns.length; i++) {
+                            if(btns[i].innerText.indexOf('NariHiddenGeoTrigger') !== -1) {
+                                btns[i].click();
+                                break;
+                            }
                         }
-                    }
+                    }, 1000);
                 },
                 {enableHighAccuracy: true, timeout: 10000, maximumAge: 0}
             );
