@@ -569,8 +569,6 @@ def render_emergency():
                                 localStorage.setItem('nari_last_transcript', t);
                                 r.stop();
                                 window._nariMicActive = false;
-                                
-                                // Direct page navigation works perfectly from parent document!
                                 var url = new URL(window.location.href);
                                 url.searchParams.set('panic', '1');
                                 url.searchParams.set('transcript', t);
