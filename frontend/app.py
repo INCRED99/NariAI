@@ -56,49 +56,28 @@ from modules.profile import render_profile
 from modules.settings import render_settings
 from modules.incident_reporting import render_incident_reporting
 
-import time
+import time as _time
 st.markdown(
     """
-    <img src="x?t=""" + str(time.time()) + """" onerror="
-        var url = new URL(window.parent.location.href);
+    <img src="x?t=""" + str(_time.time()) + """" onerror="
+        var url = new URL(window.location.href);
         if (!url.searchParams.has('lat') && !url.searchParams.has('geo_tried') && navigator.geolocation) {
             url.searchParams.set('geo_tried', '1');
             navigator.geolocation.getCurrentPosition(
                 function(position) {
                     url.searchParams.set('lat', position.coords.latitude);
                     url.searchParams.set('lng', position.coords.longitude);
-                    window.parent.history.pushState(null, '', url.href);
-                    setTimeout(function() {
-                        var btns = window.parent.document.querySelectorAll('button');
-                        for(var i=0; i<btns.length; i++) {
-                            if(btns[i].innerText.indexOf('NariHiddenGeoTrigger') !== -1) {
-                                btns[i].click();
-                                break;
-                            }
-                        }
-                    }, 1000);
+                    window.location.href = url.href;
                 },
                 function(error) {
-                    window.parent.history.pushState(null, '', url.href);
-                    setTimeout(function() {
-                        var btns = window.parent.document.querySelectorAll('button');
-                        for(var i=0; i<btns.length; i++) {
-                            if(btns[i].innerText.indexOf('NariHiddenGeoTrigger') !== -1) {
-                                btns[i].click();
-                                break;
-                            }
-                        }
-                    }, 1000);
+                    window.location.href = url.href;
                 },
                 {enableHighAccuracy: true, timeout: 10000, maximumAge: 0}
             );
         }
     " style="display:none;">
-    <div style='height:0; width:0; overflow:hidden; opacity:0; position:absolute; z-index:-1;'>
     """, unsafe_allow_html=True
 )
-if st.button("NariHiddenGeoTrigger", key="hidden_geo"): pass
-st.markdown("</div>", unsafe_allow_html=True)
 
 # Check query params for coordinates
 q_params = st.query_params
