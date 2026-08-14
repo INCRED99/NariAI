@@ -57,35 +57,56 @@ from modules.settings import render_settings
 from modules.incident_reporting import render_incident_reporting
 
 import streamlit.components.v1 as components
+# Inject a geolocation script into the PARENT document from the iframe.
+# The iframe (components.html) has sandbox="allow-scripts allow-same-origin",
+# so it can inject a <script> into window.parent.document.
+# The injected script runs in the PARENT context with full geolocation permissions.
 components.html("""
 <script>
 try {
-    var pWin = window.parent || window;
+    var pDoc = window.parent.document;
+    var pWin = window.parent;
     var url = new URL(pWin.location.href);
-    if (!url.searchParams.has('lat') && !url.searchParams.has('geo_tried')) {
-        var nav = pWin.navigator || navigator;
-        if (nav && nav.geolocation) {
-            nav.geolocation.getCurrentPosition(
-                function(pos) {
-                    url.searchParams.set('lat', pos.coords.latitude);
-                    url.searchParams.set('lng', pos.coords.longitude);
-                    url.searchParams.set('geo_tried', '1');
-                    pWin.location.href = url.href;
-                },
-                function(err) {
-                    url.searchParams.set('geo_tried', '1');
-                    pWin.location.href = url.href;
-                },
-                {enableHighAccuracy: true, timeout: 15000, maximumAge: 0}
-            );
-        } else {
-            url.searchParams.set('geo_tried', '1');
+
+    // Skip if lat already in URL or if we already injected
+    if (!url.searchParams.has('lat') && !pWin._nariGeoInjected) {
+        pWin._nariGeoInjected = true;
+
+        // Check localStorage for previously saved coordinates
+        var savedLat = pWin.localStorage.getItem('nari_lat');
+        var savedLng = pWin.localStorage.getItem('nari_lng');
+        if (savedLat && savedLng) {
+            url.searchParams.set('lat', savedLat);
+            url.searchParams.set('lng', savedLng);
             pWin.location.href = url.href;
+        } else {
+            // Inject a script into the parent document to request geolocation
+            var s = pDoc.createElement('script');
+            s.textContent = '(' + function() {
+                navigator.geolocation.getCurrentPosition(
+                    function(pos) {
+                        var lat = pos.coords.latitude;
+                        var lng = pos.coords.longitude;
+                        localStorage.setItem('nari_lat', lat);
+                        localStorage.setItem('nari_lng', lng);
+                        var u = new URL(window.location.href);
+                        u.searchParams.set('lat', lat);
+                        u.searchParams.set('lng', lng);
+                        window.location.href = u.href;
+                    },
+                    function(err) {
+                        console.log('Nari geo error:', err.code, err.message);
+                    },
+                    {enableHighAccuracy: true, timeout: 15000, maximumAge: 0}
+                );
+            } + ')();';
+            pDoc.head.appendChild(s);
         }
     }
-} catch(e) { console.error('Nari Geolocation Error:', e); }
+} catch(e) { console.error('Nari Geo inject error:', e); }
 </script>
 """, height=0)
+
 
 
 # Check query params for coordinates
