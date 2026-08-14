@@ -520,147 +520,77 @@ def render_emergency():
                 if stop_requested:
                     st.session_state["stop_listener_requested"] = False
 
-                distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "bachao bachao", "madad"]
-                if safe_word:
-                    distress_keywords.append(safe_word.lower())
-
-                keywords_js = json.dumps(distress_keywords)
-                disp_safe_word = safe_word if safe_word else "None"
-                stop_mode_js = "true" if stop_requested else "false"
-
-                # Hidden button for iframe to click
-                st.markdown("<div style='height:0; width:0; overflow:hidden; opacity:0; position:absolute; z-index:-1;'>", unsafe_allow_html=True)
-                if st.button("NariHiddenVoiceTrigger"):
-                    pass # Handled on rerun via query params
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                components.html(
-                    f"""
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
-                        <style>
-                            body {{ margin:0; padding:0; background:transparent; }}
-                            .mic-box {{ display:flex; align-items:center; gap:15px; padding:15px; background:rgba(255,59,48,0.08); border-radius:12px; border:1px solid rgba(255,59,48,0.3); color:#FFFFFF; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }}
-                            .material-icons-outlined {{ font-size:32px; color:#FF3B30; animation:pulse-sos 1.5s infinite; }}
-                            @keyframes pulse-sos {{ 0% {{ opacity:0.6; transform:scale(1); }} 50% {{ opacity:1; transform:scale(1.1); }} 100% {{ opacity:0.6; transform:scale(1); }} }}
-                            .status-text {{ font-size:14px; font-weight:600; display:block; color:#FF3B30; }}
-                            .sub-text {{ font-size:12px; color:#9E9EAF; display:block; margin-top:2px; }}
-                            .error-box {{ background:rgba(255,149,0,0.08); border-color:rgba(255,149,0,0.3); }}
-                            .error-box .material-icons-outlined {{ color:#FF9500; animation:none; }}
-                            .error-box .status-text {{ color:#FF9500; }}
-                        </style>
-                    </head>
-                    <body>
-                        <div id="mic_box" class="mic-box">
-                            <span id="mic_icon" class="material-icons-outlined">settings_voice</span>
-                            <div>
-                                <span class="status-text" id="status_text">🟢 Listening — say anything...</span>
-                                <span class="sub-text" id="sub_text">Any spoken phrase will auto-trigger SOS. Or click Stop Listener.</span>
-                            </div>
+                if stop_requested:
+                    # STOP MODE: stop recognition, grab last transcript, trigger SOS
+                    st.markdown("""
+                    <img src="x" onerror="
+                        window._nariMicActive = false;
+                        if(window._nariRecognition) { try { window._nariRecognition.stop(); } catch(e) {} window._nariRecognition = null; }
+                        var lastT = localStorage.getItem('nari_last_transcript') || 'voice sos triggered';
+                        localStorage.removeItem('nari_last_transcript');
+                        var url = new URL(window.location.href);
+                        url.searchParams.set('panic', '1');
+                        url.searchParams.set('transcript', lastT);
+                        window.location.href = url.href;
+                    " style="display:none">
+                    """, unsafe_allow_html=True)
+                else:
+                    # LISTEN MODE: mic status UI + SpeechRecognition in parent document
+                    # Runs in the PARENT document (not iframe) so mic works on Render/HTTPS
+                    st.markdown("""
+                    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+                    <style>
+                        @keyframes pulse-sos { 0% { opacity:0.6; transform:scale(1); } 50% { opacity:1; transform:scale(1.1); } 100% { opacity:0.6; transform:scale(1); } }
+                    </style>
+                    <div style="display:flex; align-items:center; gap:15px; padding:15px; background:rgba(255,59,48,0.08); border-radius:12px; border:1px solid rgba(255,59,48,0.3); color:#FFFFFF; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+                        <span class="material-icons-outlined" id="nari_mic_icon" style="font-size:32px; color:#FF3B30; animation:pulse-sos 1.5s infinite;">settings_voice</span>
+                        <div>
+                            <span id="nari_mic_status" style="font-size:14px; font-weight:600; display:block; color:#FF3B30;">🟢 Listening — say anything...</span>
+                            <span id="nari_mic_sub" style="font-size:12px; color:#9E9EAF; display:block; margin-top:2px;">Any spoken phrase will auto-trigger SOS. Or click Stop Listener.</span>
                         </div>
-                        <script>
-                            var BACKEND_URL = "{BACKEND_URL}";
-                            var STOP_MODE = {stop_mode_js};
-                            var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                            var micBox = document.getElementById("mic_box");
-                            var statusText = document.getElementById("status_text");
-                            var subText = document.getElementById("sub_text");
-                            var micIcon = document.getElementById("mic_icon");
-                            var distressKeywords = {keywords_js};
-                            // Audio recording removed per user request
-                            
-                            // Find hidden button
-                            var hiddenBtn = null;
-                            try {{
-                                var buttons = window.parent.document.querySelectorAll('button');
-                                for(var i=0; i<buttons.length; i++) {{
-                                    if(buttons[i].innerText.includes('NariHiddenVoiceTrigger')) {{
-                                        hiddenBtn = buttons[i];
-                                        break;
-                                    }}
-                                }}
-                            }} catch(e) {{}}
-
-                            function uploadAndNavigate(transcript) {{
-                                console.log("Iframe: uploadAndNavigate called with transcript:", transcript);
-                                statusText.innerText = "⏳ Processing distress signal...";
-                                function navigate() {{
-                                    console.log("Iframe: Triggering parent via hidden button");
-                                    try {{
-                                        var url = new URL(window.parent.location.href);
-                                        url.searchParams.set('panic', '1');
-                                        url.searchParams.set('transcript', transcript || 'voice sos triggered');
-                                        window.parent.history.pushState(null, '', url.href);
-                                        
-                                        if(hiddenBtn) {{
-                                            hiddenBtn.click();
-                                        }} else {{
-                                            // Fallback if button not found
-                                            window.parent.postMessage({{
-                                                type: 'nari_panic',
-                                                transcript: transcript || 'voice sos triggered'
-                                            }}, '*');
-                                        }}
-                                    }} catch(err) {{
-                                        console.error("Iframe pushState failed", err);
-                                    }}
-                                }}
-                                // No mediaRecorder to stop
-                                console.log("Iframe: Navigating immediately with transcript...");
-                                navigate('', '');
-                            }}
-
-                            if(!SpeechRecognition) {{
-                                micBox.className = "mic-box error-box";
-                                micIcon.innerText = "warning";
-                                statusText.innerText = "Browser Speech API Unsupported";
-                                subText.innerText = "Use Chrome or Edge for voice SOS.";
-                            }} else {{
-                                // STOP_MODE: finalize and trigger SOS with last transcript
-                                if(STOP_MODE) {{
-                                    statusText.innerText = "⏹️ Finalizing...";
-                                    var lastT = localStorage.getItem('nari_last_transcript') || 'voice sos triggered';
-                                    localStorage.removeItem('nari_last_transcript');
-                                    setTimeout(function() {{ uploadAndNavigate(lastT); }}, 300);
-                                }} else {{
-                                    // Start SpeechRecognition directly — no getUserMedia needed
-                                    // SpeechRecognition handles its own mic access internally
-                                    var recognition = new SpeechRecognition();
-                                    recognition.continuous = true;
-                                    recognition.interimResults = false;
-                                    recognition.lang = 'en-IN';
-                                    recognition.onresult = function(event) {{
-                                        var idx = event.results.length - 1;
-                                        var transcript = event.results[idx][0].transcript;
-                                        localStorage.setItem('nari_last_transcript', transcript);
-                                        statusText.innerText = '🟢 Heard: "' + transcript + '"';
-                                        recognition.stop();
-                                        uploadAndNavigate(transcript);
-                                    }};
-                                    recognition.onerror = function(event) {{
-                                        if(event.error === 'not-allowed') {{
-                                            micBox.className = "mic-box error-box";
-                                            micIcon.innerText = "gpp_bad";
-                                            statusText.innerText = "Microphone Permission Blocked";
-                                            subText.innerText = "Allow mic access in browser settings.";
-                                        }}
-                                    }};
-                                    recognition.onend = function() {{
-                                        if(statusText.innerText.indexOf("🟢") !== -1) {{
-                                            try {{ recognition.start(); }} catch(e) {{}}
-                                        }}
-                                    }};
-                                    try {{ recognition.start(); }} catch(e) {{}}
-                                }}
-                            }}
-                        </script>
-                    </body>
-                    </html>
-                    """,
-                    height=100
-                )
+                    </div>
+                    <img src="x" onerror="
+                        var statusEl = document.getElementById('nari_mic_status');
+                        var subEl = document.getElementById('nari_mic_sub');
+                        var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                        if(!SR) {
+                            if(statusEl) statusEl.innerText = 'Browser Speech API Unsupported';
+                            if(subEl) subEl.innerText = 'Use Chrome or Edge for voice SOS.';
+                        } else if(!window._nariMicActive) {
+                            window._nariMicActive = true;
+                            var r = new SR();
+                            window._nariRecognition = r;
+                            r.continuous = true;
+                            r.interimResults = false;
+                            r.lang = 'en-IN';
+                            r.onresult = function(e) {
+                                var t = e.results[e.results.length-1][0].transcript;
+                                if(statusEl) statusEl.innerText = 'Heard: ' + t;
+                                localStorage.setItem('nari_last_transcript', t);
+                                r.stop();
+                                window._nariMicActive = false;
+                                
+                                // Direct page navigation works perfectly from parent document!
+                                var url = new URL(window.location.href);
+                                url.searchParams.set('panic', '1');
+                                url.searchParams.set('transcript', t);
+                                window.location.href = url.href;
+                            };
+                            r.onerror = function(ev) {
+                                if(ev.error === 'not-allowed') {
+                                    if(statusEl) statusEl.innerText = 'Microphone Permission Blocked';
+                                    if(subEl) subEl.innerText = 'Allow mic access in browser settings.';
+                                }
+                            };
+                            r.onend = function() {
+                                if(window._nariMicActive) {
+                                    try { r.start(); } catch(e) {}
+                                }
+                            };
+                            try { r.start(); } catch(e) {}
+                        }
+                    " style="display:none">
+                    """, unsafe_allow_html=True)
 
             if is_listening:
                 st.markdown("<p style='font-size:12px; font-weight:600; margin:20px 0 8px 0;'>Simulate Vocal Panic Sample (Whisper):</p>", unsafe_allow_html=True)
