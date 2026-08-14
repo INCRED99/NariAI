@@ -69,41 +69,20 @@ def bg_mic_listener(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token):
                 with mic as source:
                     audio = r.listen(source, timeout=3, phrase_time_limit=4)
                 
-                LATEST_MICROPHONE_AUDIO[uid] = audio.get_wav_data()
+                # Audio recording removed
                 print("[THREAD DEBUG] Speech captured! Sending to transcription...")
                 text = r.recognize_google(audio).lower()
                 print(f"[THREAD DEBUG] Google Speech transcribed: '{text}'")
                 
-                # Check for distress keywords
-                found_panic = False
-                for kw in distress_keywords:
-                    if kw in text:
-                        found_panic = True
-                        break
+                # Trigger on ANY spoken phrase
+                found_panic = True
                         
                 if found_panic:
-                    print(f"[THREAD DEBUG] DISTRESS PHRASE DETECTED: '{text}'! Dispatching SOS...")
+                    print(f"[THREAD DEBUG] SPOKEN PHRASE DETECTED: '{text}'! Dispatching SOS...")
                     
-                    # Upload captured audio in-memory to backend to host publicly for emergency contacts
-                    audio_url = ""
-                    filename = ""
-                    try:
-                        wav_data = audio.get_wav_data()
-                        files = {"file": ("sos_audio.wav", wav_data, "audio/wav")}
-                        upload_res = requests.post(f"{BACKEND_URL}/sos/upload-audio", files=files, headers=headers, timeout=6)
-                        if upload_res.status_code == 200:
-                            upload_data = upload_res.json()
-                            audio_url = upload_data.get("audio_url", "")
-                            filename = upload_data.get("filename", "")
-                            print(f"[THREAD DEBUG] Emergency audio uploaded successfully: {audio_url}")
-                        else:
-                            print(f"[THREAD DEBUG] Emergency audio upload failed: {upload_res.status_code}")
-                    except Exception as upload_err:
-                        print(f"[THREAD DEBUG] Failed to upload emergency audio: {upload_err}")
+                    # Audio recording upload removed per user request
                         
                     situation_text = f"Voice SOS trigger: '{text}'"
-                    if audio_url:
-                        situation_text += f"\nLive Audio Alert: {audio_url}"
                         
                     payload = {
                         "situation": situation_text,
@@ -123,19 +102,15 @@ def bg_mic_listener(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token):
                         else:
                             print(f"[THREAD DEBUG] SOS post failed with status code: {response.status_code}")
                             sms_body = f"Emergency! Spoken threat detected: '{text}' at {calc_loc_val}."
-                            if audio_url:
-                                sms_body += f"\nAudio: {audio_url}"
                     except Exception as post_err:
                         print(f"[THREAD DEBUG] SOS post error: {post_err}")
                         sms_body = f"Emergency! Spoken threat detected: '{text}' at {calc_loc_val}."
-                        if audio_url:
-                            sms_body += f"\nAudio: {audio_url}"
                         
                     # Put inside shared global triggers
                     GLOBAL_PANIC_TRIGGERS[uid] = {
                         "transcript": text,
                         "sms_body": sms_body,
-                        "filename": filename
+                        "filename": ""
                     }
                     break  # Stop thread on trigger
             except sr.WaitTimeoutError:
@@ -157,6 +132,33 @@ def bg_mic_listener(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token):
     logger.info("Background Voice SOS listener thread stopped.")
 
 def render_emergency():
+    # Inject message listener to handle navigation from the speech recording iframe securely
+    st.markdown(
+        """
+        <img src="x" onerror="
+            console.log('Nari parent window: checking/registering message listener...');
+            if (!window.nariPanicListenerRegistered) {
+                window.nariPanicListenerRegistered = true;
+                console.log('Nari parent window: registering message listener for nari_panic');
+                window.addEventListener('message', function(event) {
+                    console.log('Nari parent window received message:', event.data);
+                    if (event.data && event.data.type === 'nari_panic') {
+                        console.log('Nari parent window: panic triggered! Navigating parent...');
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('panic', '1');
+                        url.searchParams.set('transcript', event.data.transcript || 'voice sos triggered');
+                        if (event.data.audio_url) url.searchParams.set('audio_url', event.data.audio_url);
+                        if (event.data.audio_filename) url.searchParams.set('audio_filename', event.data.audio_filename);
+                        console.log('Nari parent window: Redirecting to:', url.href);
+                        window.location.href = url.href;
+                    }
+                });
+            }
+        " style="display:none;">
+        """,
+        unsafe_allow_html=True
+    )
+
     # Check background voice panic triggers
     uid = st.session_state.get("uid", "default_user")
     if uid in GLOBAL_PANIC_TRIGGERS:
@@ -185,10 +187,8 @@ def render_emergency():
             _user_lat = st.session_state.get("current_lat", 28.6273)
             _user_lng = st.session_state.get("current_lng", 77.3725)
             _loc = st.session_state.get("current_address", "Your Location")
-            # Include exact transcript and audio link in situation
+            # Include exact transcript in situation
             _situation = f"Voice SOS trigger: '{_transcript}'"
-            if _audio_url:
-                _situation += f"\nLive Audio Alert: {_audio_url}"
             _payload = {
                 "situation": _situation,
                 "location_name": _loc,
@@ -201,8 +201,6 @@ def render_emergency():
                 st.session_state["sos_sms_body"] = _res.get("sms_body", "")
             else:
                 _fallback = f"🚨 EMERGENCY! Distress detected: '{_transcript}'. Location: {_loc}."
-                if _audio_url:
-                    _fallback += f"\n🎙️ Voice clip: {_audio_url}"
                 st.session_state["sos_sms_body"] = _fallback
             st.session_state["sos_sent"] = True
             st.session_state["wa_opened"] = False
@@ -329,7 +327,7 @@ def render_emergency():
         # Build contact rows HTML
         contact_rows_html = ""
         for i, (name, rel, url) in enumerate(wa_urls):
-            # wa.me URL for the button click (opens WhatsApp Web or app)
+            # Use target="_blank" so it opens in a new tab without cross-origin iframe security issues
             contact_rows_html += f"""
             <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1);
                         border-radius:8px; padding:12px 18px; margin-bottom:10px;
@@ -339,7 +337,7 @@ def render_emergency():
                     <span style="font-size:11px; color:#9E9EAF;">{rel}</span>
                 </div>
                 <a href="{url}"
-                   onclick="window.top.location.href=this.href; return false;"
+                   target="_blank"
                    style="background-color:#25D366; color:white; padding:10px 20px;
                           border-radius:6px; text-decoration:none; font-size:13px;
                           font-weight:600; display:inline-block; cursor:pointer;">
@@ -347,47 +345,29 @@ def render_emergency():
                 </a>
             </div>"""
 
-        # Auto-open strategy:
-        # 1. Try whatsapp:// deep link first — opens desktop app directly if installed
-        # 2. After 2s fallback to wa.me — opens WhatsApp Web if app didn't handle it
-        auto_nav_js = ""
         if auto_open and wa_urls:
             first_url = wa_urls[0][2]  # wa.me URL
-            # Extract phone and text from wa.me URL to build whatsapp:// URI
-            # wa.me URL format: https://wa.me/PHONE?text=MSG
+            first_name = wa_urls[0][0]
+            
             import urllib.parse as _up
             parsed = _up.urlparse(first_url)
             phone_part = parsed.path.lstrip("/")
             text_part = _up.parse_qs(parsed.query).get("text", [""])[0]
             encoded_text = _up.quote(text_part)
             whatsapp_uri = f"whatsapp://send?phone={phone_part}&text={encoded_text}"
-
-            auto_nav_js = f"""
-                // Try whatsapp:// deep link — opens desktop app if installed
-                var deepLink = "{whatsapp_uri}";
-                var webLink = "{first_url}";
-                
-                // Use hidden iframe to attempt deep link without navigating away
-                var iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-                
-                var appOpened = false;
-                
-                // Listen for page blur — if app opened, page loses focus
-                window.top.addEventListener('blur', function() {{
-                    appOpened = true;
-                }}, {{ once: true }});
-                
-                iframe.src = deepLink;
-                
-                // After 2.5s, if app didn't open (no blur), redirect to wa.me web
-                setTimeout(function() {{
-                    if (!appOpened) {{
-                        window.top.location.href = webLink;
-                    }}
-                }}, 2500);
-            """
+            
+            # 1. Attempt automatic launch using a hidden iframe with the deep link.
+            # This often bypasses popup blockers for custom protocols like whatsapp://
+            import streamlit.components.v1 as components
+            components.html(f'<iframe src="{whatsapp_uri}" style="display:none;"></iframe>', height=0)
+            
+            # 2. Provide a highly visible manual fallback button
+            st.link_button(
+                f"💬 Open WhatsApp → Send to {first_name}",
+                first_url,
+                use_container_width=True,
+                type="primary"
+            )
 
         total_height = 80 + len(wa_urls) * 75
         components.html(
@@ -403,9 +383,6 @@ def render_emergency():
                     </p>
                 </div>
                 {contact_rows_html}
-                <script>
-                    {auto_nav_js}
-                </script>
             </body>
             </html>""",
             height=total_height,
@@ -551,6 +528,12 @@ def render_emergency():
                 disp_safe_word = safe_word if safe_word else "None"
                 stop_mode_js = "true" if stop_requested else "false"
 
+                # Hidden button for iframe to click
+                st.markdown("<div style='height:0; width:0; overflow:hidden; opacity:0; position:absolute; z-index:-1;'>", unsafe_allow_html=True)
+                if st.button("NariHiddenVoiceTrigger"):
+                    pass # Handled on rerun via query params
+                st.markdown("</div>", unsafe_allow_html=True)
+
                 components.html(
                     f"""
                     <!DOCTYPE html>
@@ -574,7 +557,7 @@ def render_emergency():
                             <span id="mic_icon" class="material-icons-outlined">settings_voice</span>
                             <div>
                                 <span class="status-text" id="status_text">🟢 Listening — say anything...</span>
-                                <span class="sub-text" id="sub_text">Distress words auto-trigger SOS. Safe word: <strong>{disp_safe_word}</strong>. Or click Stop Listener.</span>
+                                <span class="sub-text" id="sub_text">Any spoken phrase will auto-trigger SOS. Or click Stop Listener.</span>
                             </div>
                         </div>
                         <script>
@@ -586,40 +569,47 @@ def render_emergency():
                             var subText = document.getElementById("sub_text");
                             var micIcon = document.getElementById("mic_icon");
                             var distressKeywords = {keywords_js};
-                            var mediaRecorder = null;
-                            var audioChunks = [];
-
-                            function startAudioCapture(stream) {{
-                                audioChunks = [];
-                                try {{ mediaRecorder = new MediaRecorder(stream, {{mimeType:'audio/webm'}}); }}
-                                catch(e) {{ mediaRecorder = new MediaRecorder(stream); }}
-                                mediaRecorder.ondataavailable = function(e) {{ if(e.data && e.data.size>0) audioChunks.push(e.data); }};
-                                mediaRecorder.start(1000);
-                            }}
+                            // Audio recording removed per user request
+                            
+                            // Find hidden button
+                            var hiddenBtn = null;
+                            try {{
+                                var buttons = window.parent.document.querySelectorAll('button');
+                                for(var i=0; i<buttons.length; i++) {{
+                                    if(buttons[i].innerText.includes('NariHiddenVoiceTrigger')) {{
+                                        hiddenBtn = buttons[i];
+                                        break;
+                                    }}
+                                }}
+                            }} catch(e) {{}}
 
                             function uploadAndNavigate(transcript) {{
-                                statusText.innerText = "⏳ Uploading voice clip...";
-                                function navigate(audioUrl, filename) {{
-                                    var base = window.top.location.href.split('?')[0];
-                                    var params = new URLSearchParams(window.top.location.search);
-                                    params.set('panic','1');
-                                    params.set('transcript', transcript || 'voice sos triggered');
-                                    if(audioUrl) params.set('audio_url', audioUrl);
-                                    if(filename) params.set('audio_filename', filename);
-                                    window.top.location.href = base + '?' + params.toString();
+                                console.log("Iframe: uploadAndNavigate called with transcript:", transcript);
+                                statusText.innerText = "⏳ Processing distress signal...";
+                                function navigate() {{
+                                    console.log("Iframe: Triggering parent via hidden button");
+                                    try {{
+                                        var url = new URL(window.parent.location.href);
+                                        url.searchParams.set('panic', '1');
+                                        url.searchParams.set('transcript', transcript || 'voice sos triggered');
+                                        window.parent.history.pushState(null, '', url.href);
+                                        
+                                        if(hiddenBtn) {{
+                                            hiddenBtn.click();
+                                        }} else {{
+                                            // Fallback if button not found
+                                            window.parent.postMessage({{
+                                                type: 'nari_panic',
+                                                transcript: transcript || 'voice sos triggered'
+                                            }}, '*');
+                                        }}
+                                    }} catch(err) {{
+                                        console.error("Iframe pushState failed", err);
+                                    }}
                                 }}
-                                if(mediaRecorder && audioChunks.length > 0) {{
-                                    if(mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-                                    setTimeout(function() {{
-                                        var blob = new Blob(audioChunks, {{type:'audio/webm'}});
-                                        var fd = new FormData();
-                                        fd.append('file', blob, 'sos_voice.webm');
-                                        fetch(BACKEND_URL.replace('/api','') + '/api/sos/upload-audio', {{method:'POST', body:fd}})
-                                        .then(function(r) {{ return r.json(); }})
-                                        .then(function(d) {{ navigate(d.audio_url||'', d.filename||''); }})
-                                        .catch(function() {{ navigate('',''); }});
-                                    }}, 300);
-                                }} else {{ navigate('',''); }}
+                                // No mediaRecorder to stop
+                                console.log("Iframe: Navigating immediately with transcript...");
+                                navigate('', '');
                             }}
 
                             if(!SpeechRecognition) {{
@@ -630,7 +620,7 @@ def render_emergency():
                             }} else {{
                                 navigator.mediaDevices.getUserMedia({{audio:true}})
                                 .then(function(stream) {{
-                                    startAudioCapture(stream);
+                                    // Audio recording start removed
                                     if(STOP_MODE) {{
                                         statusText.innerText = "⏹️ Finalizing recording...";
                                         var lastT = localStorage.getItem('nari_last_transcript') || 'voice sos triggered';
@@ -647,12 +637,8 @@ def render_emergency():
                                         var transcript = event.results[idx][0].transcript;
                                         localStorage.setItem('nari_last_transcript', transcript);
                                         statusText.innerText = '🟢 Heard: "' + transcript + '"';
-                                        var lower = transcript.toLowerCase();
-                                        var found = false;
-                                        for(var i=0; i<distressKeywords.length; i++) {{
-                                            if(lower.indexOf(distressKeywords[i]) !== -1) {{ found=true; break; }}
-                                        }}
-                                        if(found) {{ recognition.stop(); uploadAndNavigate(transcript); }}
+                                        recognition.stop();
+                                        uploadAndNavigate(transcript);
                                     }};
                                     recognition.onerror = function(event) {{
                                         if(event.error === 'not-allowed') {{
@@ -691,56 +677,28 @@ def render_emergency():
                 with t1:
                     scream = st.button("Scream", key="sim_scream", width="stretch")
                 with t2:
-                    help_word = st.button("Help", key="sim_help", width="stretch")
+                    help_btn = st.button("Help", key="sim_help", width="stretch")
                 with t3:
                     bachao = st.button("Bachao", key="sim_bachao", width="stretch")
                     
                 custom_input = st.text_input("Or simulate custom spoken phrase", placeholder="Say something...", key="sim_custom_voice")
                 
-                sim_word_key = ""
-                if scream: sim_word_key = "panic_scream"
-                elif help_word: sim_word_key = "panic_help"
-                elif bachao: sim_word_key = "panic_bachao"
+                sim_word = None
+                if scream: sim_word = "Scream"
+                elif help_btn: sim_word = "Help"
+                elif bachao: sim_word = "Bachao"
                 elif custom_input:
                     if st.button("🎤 Parse Custom Spoken Phrase", key="btn_parse_custom_voice"):
-                        sim_word_key = custom_input
+                        sim_word = custom_input
                 
-                if sim_word_key:
-                    files = {
-                        "file": (f"{sim_word_key}.wav", b"fake audio content bytes")
-                    }
-                    data = {
-                        "latitude": user_lat,
-                        "longitude": user_lng,
-                        "location_name": calc_loc_val
-                    }
-                    
-                    with st.spinner("Whisper transcribing vocal cues..."):
-                        res = api_post_file("/voice-panic", files=files, data=data)
-                        
-                    if res:
-                        st.session_state["stt_processing"] = True
-                        st.session_state["stt_result"] = res.get("transcript", "")
-                        st.session_state["stt_urgency"] = "CRITICAL / PANIC THREAT DETECTED" if res.get("panic_detected") else "LOW URGENCY"
-                        st.session_state["stt_db_status"] = res.get("db_connection_status", "Disconnected")
-                        st.session_state["stt_msg_sent"] = res.get("emergency_message_sent", False)
-                        st.session_state["stt_recipients"] = res.get("emergency_message_recipients", [])
-                        st.session_state["stt_sms_body"] = res.get("emergency_message_body", "")
-                        
-                        if res.get("panic_detected"):
-                            st.session_state["sos_sms_body"] = res.get("emergency_message_body", "")
-                            st.session_state["sos_sent"] = True
-                            st.session_state["stt_processing"] = False
-                            st.toast("🔥 Panic Vocal Detected! Activating SOS...", icon="🚨")
-                        else:
-                            st.session_state["sos_situation"] = "Emergency SOS button pressed by user."
-                        st.rerun()
-                    else:
-                        st.error("Audio parser connection failed.")
+                if sim_word:
+                    st.session_state["sos_sent"] = True
+                    st.session_state["sos_situation"] = f"Voice SOS trigger: {sim_word}"
+                    st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
         # Transcribe & trigger state monitor
-        if st.session_state["stt_processing"]:
+        if st.session_state.get("stt_processing", False):
             db_status = st.session_state.get("stt_db_status", "Disconnected")
             if "MongoDB" in db_status and "offline" not in db_status.lower() and "failed" not in db_status.lower():
                 db_badge = f'<span style="background-color: #34C759; color: white; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; display: inline-block; margin-top: 4px;">🟢 {db_status}</span>'
