@@ -531,7 +531,14 @@ def render_emergency():
                         var url = new URL(window.location.href);
                         url.searchParams.set('panic', '1');
                         url.searchParams.set('transcript', lastT);
-                        window.location.href = url.href;
+                        window.history.pushState(null, '', url.href);
+                        var btns = document.querySelectorAll('button');
+                        for(var i=0; i<btns.length; i++) {
+                            if(btns[i].innerText.indexOf('NariHiddenVoiceTrigger') !== -1) {
+                                btns[i].click();
+                                break;
+                            }
+                        }
                     " style="display:none">
                     """, unsafe_allow_html=True)
                 else:
@@ -572,7 +579,14 @@ def render_emergency():
                                 var url = new URL(window.location.href);
                                 url.searchParams.set('panic', '1');
                                 url.searchParams.set('transcript', t);
-                                window.location.href = url.href;
+                                window.history.pushState(null, '', url.href);
+                                var btns = document.querySelectorAll('button');
+                                for(var i=0; i<btns.length; i++) {
+                                    if(btns[i].innerText.indexOf('NariHiddenVoiceTrigger') !== -1) {
+                                        btns[i].click();
+                                        break;
+                                    }
+                                }
                             };
                             r.onerror = function(ev) {
                                 if(ev.error === 'not-allowed') {
