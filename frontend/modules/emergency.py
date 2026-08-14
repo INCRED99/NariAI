@@ -9,204 +9,9 @@ from frontend.modules.api_client import api_post, api_get, api_post_file, BACKEN
 
 logger = logging.getLogger("nari.emergency")
 
-IS_RENDER = os.environ.get("RENDER") == "true"
-GLOBAL_THREADS = {}
-GLOBAL_PANIC_TRIGGERS = {}
-LATEST_MICROPHONE_AUDIO = {}
-
-# speech_recognition requires pyaudio (system mic) — only import on non-Render environments
-if not IS_RENDER:
-    try:
-        import speech_recognition as sr
-        SR_AVAILABLE = True
-    except ImportError:
-        SR_AVAILABLE = False
-        logger.warning("speech_recognition/pyaudio not available. Server-side mic listener disabled.")
-else:
-    SR_AVAILABLE = False
-
-def bg_mic_listener(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token):
-    if not SR_AVAILABLE:
-        logger.warning("bg_mic_listener called but speech_recognition is not available. Skipping.")
-        return
-    import traceback
-    try:
-        logger.info("bg_mic_listener thread execution starting...")
-        print("\n[THREAD DEBUG] Starting background voice listener thread...")
-        
-        headers = {}
-        if id_token:
-            headers["Authorization"] = f"Bearer {id_token}"
-        
-        r = sr.Recognizer()
-        r.energy_threshold = 150  # Highly sensitive threshold for normal speech
-        r.dynamic_energy_threshold = False  # Fixed threshold to avoid desensitization
-        
-        print("[THREAD DEBUG] Initializing microphone...")
-        mic = sr.Microphone()
-        
-        # Test opening the microphone once to trigger taskbar icon and verify access
-        print("[THREAD DEBUG] Verifying microphone access...")
-        with mic as source:
-            pass
-            
-        logger.info("Background Voice SOS listener thread started.")
-        print("[THREAD DEBUG] Microphone successfully opened! Active listening running...")
-        
-        distress_keywords = ["help", "save me", "bachao", "emergency", "police", "scream", "danger", "follow", "accident", "stop"]
-        if safe_word:
-            distress_keywords.append(safe_word.lower())
-
-        # Continuous loop while active
-        while True:
-            # Check active state
-            if f"voice_thread_{uid}" not in GLOBAL_THREADS:
-                print("[THREAD DEBUG] Thread terminated externally (Stop Listener clicked).")
-                break
-                
-            try:
-                print("[THREAD DEBUG] Listening for vocal input...")
-                with mic as source:
-                    audio = r.listen(source, timeout=3, phrase_time_limit=4)
-                
-                # Audio recording removed
-                print("[THREAD DEBUG] Speech captured! Sending to transcription...")
-                text = r.recognize_google(audio).lower()
-                print(f"[THREAD DEBUG] Google Speech transcribed: '{text}'")
-                
-                # Trigger on ANY spoken phrase
-                found_panic = True
-                        
-                if found_panic:
-                    print(f"[THREAD DEBUG] SPOKEN PHRASE DETECTED: '{text}'! Dispatching SOS...")
-                    
-                    # Audio recording upload removed per user request
-                        
-                    situation_text = f"Voice SOS trigger: '{text}'"
-                        
-                    payload = {
-                        "situation": situation_text,
-                        "location_name": calc_loc_val,
-                        "latitude": user_lat,
-                        "longitude": user_lng,
-                        "battery_level": 85
-                    }
-                    
-                    sms_body = ""
-                    try:
-                        response = requests.post(f"{BACKEND_URL}/sos", headers=headers, json=payload, timeout=12)
-                        if response.status_code == 200:
-                            res = response.json()
-                            sms_body = res.get("sms_body", "")
-                            print("[THREAD DEBUG] SOS posted to MongoDB successfully.")
-                        else:
-                            print(f"[THREAD DEBUG] SOS post failed with status code: {response.status_code}")
-                            sms_body = f"Emergency! Spoken threat detected: '{text}' at {calc_loc_val}."
-                    except Exception as post_err:
-                        print(f"[THREAD DEBUG] SOS post error: {post_err}")
-                        sms_body = f"Emergency! Spoken threat detected: '{text}' at {calc_loc_val}."
-                        
-                    # Put inside shared global triggers
-                    GLOBAL_PANIC_TRIGGERS[uid] = {
-                        "transcript": text,
-                        "sms_body": sms_body,
-                        "filename": ""
-                    }
-                    break  # Stop thread on trigger
-            except sr.WaitTimeoutError:
-                continue
-            except sr.UnknownValueError:
-                print("[THREAD DEBUG] Speech unrecognizable (ambient noise or silence).")
-                continue
-            except Exception as loop_ex:
-                print(f"[THREAD DEBUG] Error in listening loop: {loop_ex}")
-                time.sleep(1)
-    except Exception as e:
-        print(f"[THREAD DEBUG] CRITICAL THREAD CRASH: {e}")
-        print(traceback.format_exc())
-        logger.error(f"Background thread crashed: {e}")
-        
-    # Clean up thread reference on exit
-    GLOBAL_THREADS.pop(f"voice_thread_{uid}", None)
-    print("[THREAD DEBUG] Listener thread stopped and references cleaned.")
-    logger.info("Background Voice SOS listener thread stopped.")
+IS_RENDER = True
 
 def render_emergency():
-    # Inject message listener to handle navigation from the speech recording iframe securely
-    st.markdown(
-        """
-        <img src="x" onerror="
-            console.log('Nari parent window: checking/registering message listener...');
-            if (!window.nariPanicListenerRegistered) {
-                window.nariPanicListenerRegistered = true;
-                console.log('Nari parent window: registering message listener for nari_panic');
-                window.addEventListener('message', function(event) {
-                    console.log('Nari parent window received message:', event.data);
-                    if (event.data && event.data.type === 'nari_panic') {
-                        console.log('Nari parent window: panic triggered! Navigating parent...');
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('panic', '1');
-                        url.searchParams.set('transcript', event.data.transcript || 'voice sos triggered');
-                        if (event.data.audio_url) url.searchParams.set('audio_url', event.data.audio_url);
-                        if (event.data.audio_filename) url.searchParams.set('audio_filename', event.data.audio_filename);
-                        console.log('Nari parent window: Redirecting to:', url.href);
-                        window.location.href = url.href;
-                    }
-                });
-            }
-        " style="display:none;">
-        """,
-        unsafe_allow_html=True
-    )
-
-    # Check background voice panic triggers
-    uid = st.session_state.get("uid", "default_user")
-    if uid in GLOBAL_PANIC_TRIGGERS:
-        trigger_data = GLOBAL_PANIC_TRIGGERS.pop(uid)
-        st.session_state["sos_sms_body"] = trigger_data["sms_body"]
-        st.session_state["sos_sent"] = True
-        st.session_state["wa_opened"] = False
-        st.session_state["audio_filename"] = trigger_data.get("filename", "")
-        st.session_state["voice_listener_active"] = False
-        GLOBAL_THREADS.pop(f"voice_thread_{uid}", None)
-        st.rerun()
-
-    # Check browser mic panic trigger from URL query params (set by JS Web Speech API)
-    _q = st.query_params
-    if _q.get("panic") == "1":
-        _transcript = _q.get("transcript", "distress detected")
-        _audio_url = _q.get("audio_url", "")
-        _audio_filename = _q.get("audio_filename", "")
-        st.query_params.pop("panic", None)
-        st.query_params.pop("transcript", None)
-        st.query_params.pop("audio_url", None)
-        st.query_params.pop("audio_filename", None)
-        # Store transcript for use if Stop Listener is clicked after detection
-        st.session_state["last_mic_transcript"] = _transcript
-        if not st.session_state.get("sos_sent", False):
-            _user_lat = st.session_state.get("current_lat", 28.6273)
-            _user_lng = st.session_state.get("current_lng", 77.3725)
-            _loc = st.session_state.get("current_address", "Your Location")
-            # Include exact transcript in situation
-            _situation = f"Voice SOS trigger: '{_transcript}'"
-            _payload = {
-                "situation": _situation,
-                "location_name": _loc,
-                "latitude": _user_lat,
-                "longitude": _user_lng,
-                "battery_level": 85
-            }
-            _res = api_post("/sos", _payload)
-            if _res and _res.get("success"):
-                st.session_state["sos_sms_body"] = _res.get("sms_body", "")
-            else:
-                _fallback = f"🚨 EMERGENCY! Distress detected: '{_transcript}'. Location: {_loc}."
-                st.session_state["sos_sms_body"] = _fallback
-            st.session_state["sos_sent"] = True
-            st.session_state["wa_opened"] = False
-            st.session_state["voice_listener_active"] = False
-            st.session_state["audio_filename"] = _audio_filename  # saved for auto-delete on reset
-            st.rerun()
 
     # Page Header
     st.markdown(
@@ -430,8 +235,7 @@ def render_emergency():
                     "situation": situation_desc,
                     "location_name": calc_loc_val,
                     "latitude": user_lat,
-                    "longitude": user_lng,
-                    "battery_level": 84
+                    "longitude": user_lng
                 }
                 res = api_post("/sos", payload)
                 if res and res.get("success"):
@@ -449,255 +253,38 @@ def render_emergency():
             st.markdown(
                 """
                 <h3 style='margin-top:0; font-size:20px;' class="icon-text-align">
-                    <span class="material-icons-outlined" style="color: #FF3B30;">mic</span> Voice SOS Listener
+                    <span class="material-icons-outlined" style="color: #FF9500;">bolt</span> Quick Auto-fill Messages
                 </h3>
                 <p style="color: var(--text-secondary); font-size:13px; margin-top:-5px; margin-bottom:20px;">
-                    Background vocal alarm listener. Active monitoring transcribes your voice via Whisper AI to instantly recognize emergencies.
+                    Tap any button below to instantly trigger an SOS with the selected message.
                 </p>
                 """,
                 unsafe_allow_html=True
             )
+
+            # Quick action buttons
+            quick_msg = None
+            if st.button("Help!", key="qa_help", use_container_width=True): quick_msg = "Help!"
+            if st.button("Bachao!", key="qa_bachao", use_container_width=True): quick_msg = "Bachao!"
+            if st.button("Emergency! Send Police.", key="qa_emergency", use_container_width=True): quick_msg = "Emergency! Send Police."
+            if st.button("Someone is following me", key="qa_following", use_container_width=True): quick_msg = "Someone is following me"
+            if st.button("I feel unsafe", key="qa_unsafe", use_container_width=True): quick_msg = "I feel unsafe"
+            if st.button("Medical Emergency", key="qa_medical", use_container_width=True): quick_msg = "Medical Emergency"
             
-            # Micro active state indicator
-            is_listening = st.session_state["voice_listener_active"]
-            mic_class = "panic-mic-active" if is_listening else ""
-            btn_label = "🔴 Stop Listener" if is_listening else "🎤 Activate Safety Listener"
-            thread_key = f"voice_thread_{uid}"
-            
-            st.markdown(
-                f"""
-                <div style="display:flex; align-items:center; gap:20px; padding:15px; background:rgba(255,255,255,0.03); border-radius:12px; border:1px solid var(--border-color); margin-bottom:25px;">
-                    <span class="material-icons-outlined {mic_class}" style="font-size:36px; color:#9E9EAF;">settings_voice</span>
-                    <div>
-                        <strong style="font-size:14px; display:block;">Safety Mic Status</strong>
-                        <span style="font-size:12px; color:var(--text-secondary);">{ "🟢 Active Listening - Monitoring..." if is_listening else "Standby - Listener inactive" }</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            
-            # Retrieve user profile info for background thread
-            profile_data = api_get("/profile")
-            profile_db = profile_data.get("profile", {}) if profile_data else {}
-            contacts = profile_db.get("emergency_contacts", [])
-            safe_word = profile_db.get("safe_word", "Blue Moon")
-            
-            if st.button(btn_label, key="toggle_voice_listener", width="stretch", type="primary" if is_listening else "secondary"):
-                if is_listening:
-                    # Don't immediately trigger SOS — let JS finish audio upload and capture final transcript
-                    # Set a flag the JS component will detect, finalize recording, then navigate with ?panic=1
-                    st.session_state["voice_listener_active"] = False
-                    st.session_state["stop_listener_requested"] = True
-                    GLOBAL_THREADS.pop(thread_key, None)
-                else:
-                    st.session_state["voice_listener_active"] = True
-                    st.session_state["stop_listener_requested"] = False
-                    st.session_state["last_mic_transcript"] = ""
-                    if not IS_RENDER and SR_AVAILABLE and thread_key not in GLOBAL_THREADS:
-                        id_token = st.session_state.get("idToken", "")
-                        t = threading.Thread(
-                            target=bg_mic_listener,
-                            args=(uid, user_lat, user_lng, calc_loc_val, safe_word, id_token),
-                            daemon=True
-                        )
-                        GLOBAL_THREADS[thread_key] = t
-                        t.start()
-                st.rerun()
-                
-            # Show mic component when actively listening OR once when stop was just requested (to finalize upload)
-            stop_requested = st.session_state.get("stop_listener_requested", False)
-
-            if is_listening or stop_requested:
-                import streamlit.components.v1 as components
-                import json
-
-                q = st.query_params
-                if q.get("panic") == "1":
-                    st.rerun()
-
-                # Clear stop flag immediately so it only fires STOP_MODE once
-                if stop_requested:
-                    st.session_state["stop_listener_requested"] = False
-
-                if stop_requested:
-                    # STOP MODE: stop recognition, grab last transcript, trigger SOS
-                    st.markdown("""
-                    <img src="x" onerror="
-                        window._nariMicActive = false;
-                        if(window._nariRecognition) { try { window._nariRecognition.stop(); } catch(e) {} window._nariRecognition = null; }
-                        var lastT = localStorage.getItem('nari_last_transcript') || 'voice sos triggered';
-                        localStorage.removeItem('nari_last_transcript');
-                        var url = new URL(window.location.href);
-                        url.searchParams.set('panic', '1');
-                        url.searchParams.set('transcript', lastT);
-                        window.history.pushState(null, '', url.href);
-                        var btns = document.querySelectorAll('button');
-                        for(var i=0; i<btns.length; i++) {
-                            if(btns[i].innerText.indexOf('NariHiddenVoiceTrigger') !== -1) {
-                                btns[i].click();
-                                break;
-                            }
-                        }
-                    " style="display:none">
-                    """, unsafe_allow_html=True)
-                else:
-                    # LISTEN MODE: mic status UI + SpeechRecognition in parent document
-                    # Runs in the PARENT document (not iframe) so mic works on Render/HTTPS
-                    st.markdown("""
-                    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
-                    <style>
-                        @keyframes pulse-sos { 0% { opacity:0.6; transform:scale(1); } 50% { opacity:1; transform:scale(1.1); } 100% { opacity:0.6; transform:scale(1); } }
-                    </style>
-                    <div style="display:flex; align-items:center; gap:15px; padding:15px; background:rgba(255,59,48,0.08); border-radius:12px; border:1px solid rgba(255,59,48,0.3); color:#FFFFFF; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-                        <span class="material-icons-outlined" id="nari_mic_icon" style="font-size:32px; color:#FF3B30; animation:pulse-sos 1.5s infinite;">settings_voice</span>
-                        <div>
-                            <span id="nari_mic_status" style="font-size:14px; font-weight:600; display:block; color:#FF3B30;">🟢 Listening — say anything...</span>
-                            <span id="nari_mic_sub" style="font-size:12px; color:#9E9EAF; display:block; margin-top:2px;">Any spoken phrase will auto-trigger SOS. Or click Stop Listener.</span>
-                        </div>
-                    </div>
-                    <img src="x" onerror="
-                        var statusEl = document.getElementById('nari_mic_status');
-                        var subEl = document.getElementById('nari_mic_sub');
-                        var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-                        if(!SR) {
-                            if(statusEl) statusEl.innerText = 'Browser Speech API Unsupported';
-                            if(subEl) subEl.innerText = 'Use Chrome or Edge for voice SOS.';
-                        } else if(!window._nariMicActive) {
-                            window._nariMicActive = true;
-                            var r = new SR();
-                            window._nariRecognition = r;
-                            r.continuous = true;
-                            r.interimResults = false;
-                            r.lang = 'en-IN';
-                            r.onresult = function(e) {
-                                var t = e.results[e.results.length-1][0].transcript;
-                                if(statusEl) statusEl.innerText = 'Heard: ' + t;
-                                localStorage.setItem('nari_last_transcript', t);
-                                r.stop();
-                                window._nariMicActive = false;
-                                var url = new URL(window.location.href);
-                                url.searchParams.set('panic', '1');
-                                url.searchParams.set('transcript', t);
-                                window.history.pushState(null, '', url.href);
-                                var btns = document.querySelectorAll('button');
-                                for(var i=0; i<btns.length; i++) {
-                                    if(btns[i].innerText.indexOf('NariHiddenVoiceTrigger') !== -1) {
-                                        btns[i].click();
-                                        break;
-                                    }
-                                }
-                            };
-                            r.onerror = function(ev) {
-                                if(ev.error === 'not-allowed') {
-                                    if(statusEl) statusEl.innerText = 'Microphone Permission Blocked';
-                                    if(subEl) subEl.innerText = 'Allow mic access in browser settings.';
-                                }
-                            };
-                            r.onend = function() {
-                                if(window._nariMicActive) {
-                                    try { r.start(); } catch(e) {}
-                                }
-                            };
-                            try { r.start(); } catch(e) {}
-                        }
-                    " style="display:none">
-                    """, unsafe_allow_html=True)
-
-            if is_listening:
-                st.markdown("<p style='font-size:12px; font-weight:600; margin:20px 0 8px 0;'>Simulate Vocal Panic Sample (Whisper):</p>", unsafe_allow_html=True)
-                
-                # Simulation buttons
-                t1, t2, t3 = st.columns(3)
-                with t1:
-                    scream = st.button("Scream", key="sim_scream", width="stretch")
-                with t2:
-                    help_btn = st.button("Help", key="sim_help", width="stretch")
-                with t3:
-                    bachao = st.button("Bachao", key="sim_bachao", width="stretch")
-                    
-                custom_input = st.text_input("Or simulate custom spoken phrase", placeholder="Say something...", key="sim_custom_voice")
-                
-                sim_word = None
-                if scream: sim_word = "Scream"
-                elif help_btn: sim_word = "Help"
-                elif bachao: sim_word = "Bachao"
-                elif custom_input:
-                    if st.button("🎤 Parse Custom Spoken Phrase", key="btn_parse_custom_voice"):
-                        sim_word = custom_input
-                
-                if sim_word:
-                    st.session_state["sos_sent"] = True
-                    st.session_state["sos_situation"] = f"Voice SOS trigger: {sim_word}"
-                    st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # Transcribe & trigger state monitor
-        if st.session_state.get("stt_processing", False):
-            db_status = st.session_state.get("stt_db_status", "Disconnected")
-            if "MongoDB" in db_status and "offline" not in db_status.lower() and "failed" not in db_status.lower():
-                db_badge = f'<span style="background-color: #34C759; color: white; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; display: inline-block; margin-top: 4px;">🟢 {db_status}</span>'
-            elif "fallback" in db_status.lower() or "offline" in db_status.lower():
-                db_badge = f'<span style="background-color: #FF9500; color: white; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; display: inline-block; margin-top: 4px;">🟡 {db_status}</span>'
-            else:
-                db_badge = f'<span style="background-color: #FF3B30; color: white; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; display: inline-block; margin-top: 4px;">🔴 {db_status}</span>'
-
-            recipients = st.session_state.get("stt_recipients", [])
-            sms_body = st.session_state.get("stt_sms_body", "")
-            msg_sent = st.session_state.get("stt_msg_sent", False)
-            
-            recipients_html = ""
-            if msg_sent and recipients:
-                recipients_str = ", ".join(recipients)
-                recipients_html = f"""
-                <div style="margin-top:12px;">
-                    <span style="font-size:11px; color:var(--text-secondary); display:block;">EMERGENCY BROADCAST RECIPIENTS</span>
-                    <strong style="color:#00C6FF; font-size:14px;">📡 {recipients_str}</strong>
-                </div>
-                <div style="margin-top:12px; background:rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius:8px; padding:12px;">
-                    <span style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom: 4px;">BROADCAST MESSAGE BODY</span>
-                    <span style="font-family: monospace; font-size: 12px; color: var(--text-primary); white-space: pre-wrap;">{sms_body}</span>
-                </div>
-                """
-
-            st.markdown('<div class="safety-card" style="margin-top:20px; border-left: 5px solid #FF3B30;">', unsafe_allow_html=True)
-            st.markdown(
-                f"""
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                    <div>
-                        <span style="font-size:11px; color:var(--text-secondary); display:block;">DATABASE CONNECTION STATUS</span>
-                        {db_badge}
-                    </div>
-                </div>
-                <span style="font-size:11px; color:var(--text-secondary); display:block;">SPEECH TO TEXT TRANSCRIPTION (GEMINI STT)</span>
-                <strong style="font-size:15px; color:var(--text-primary);">"{st.session_state['stt_result']}"</strong>
-                <div style="margin-top:10px;">
-                    <span style="font-size:11px; color:var(--text-secondary); display:block;">LLM URGENCY CLASSIFIER</span>
-                    <strong style="color:#FF3B30; font-size:15px;">🚨 {st.session_state['stt_urgency']}</strong>
-                </div>
-                {recipients_html}
-                """,
-                unsafe_allow_html=True
-            )
-            
-            if "CRITICAL" in st.session_state["stt_urgency"]:
-                st.toast("🔥 Panic Vocal Detected! Activating SOS...", icon="🚨")
-                st.session_state["stt_processing"] = False
-                situation_desc = f"Voice panic/distress detected: '{st.session_state.get('stt_result')}'"
+            if quick_msg:
                 payload = {
-                    "situation": situation_desc,
+                    "situation": quick_msg,
                     "location_name": calc_loc_val,
                     "latitude": user_lat,
-                    "longitude": user_lng,
-                    "battery_level": 84
+                    "longitude": user_lng
                 }
                 res = api_post("/sos", payload)
                 if res and res.get("success"):
                     st.session_state["sos_sms_body"] = res.get("sms_body", "")
+                    st.session_state["sos_situation"] = quick_msg
                     st.session_state["sos_sent"] = True
-                st.rerun()
-            else:
-                if st.button("Clear analysis log", key="clear_stt"):
-                    st.session_state["stt_processing"] = False
+                    st.session_state["wa_opened"] = False
                     st.rerun()
+                else:
+                    st.error("Failed to transmit SOS signal to emergency backend.")
             st.markdown('</div>', unsafe_allow_html=True)
