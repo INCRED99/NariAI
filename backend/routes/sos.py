@@ -12,7 +12,7 @@ class SOSRequest(BaseModel):
     location_name: str
     latitude: float
     longitude: float
-    battery_level: int
+    battery_level: Optional[int] = None
     user_id: Optional[str] = "priya_sharma"
 
 class ContactResponse(BaseModel):
@@ -117,7 +117,6 @@ def trigger_sos(
                 f"- RISK: {risk_label}{spoken_line}\n"
                 f"- WHERE: {location_name} ({request.latitude:.4f}, {request.longitude:.4f})\n"
                 f"- TIME: {datetime.now().strftime('%H:%M')}\n"
-                f"- DETAILS: Battery {request.battery_level}%\n"
                 f"Please send help immediately!{audio_part}\n"
                 f"Live Location: https://www.google.com/maps?q={request.latitude:.6f},{request.longitude:.6f}"
             )
@@ -128,7 +127,6 @@ def trigger_sos(
                 location=location_name,
                 coordinates=coordinates,
                 timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                battery_level=request.battery_level,
                 api_key=x_gemini_key
             )
         

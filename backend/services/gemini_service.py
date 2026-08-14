@@ -250,11 +250,9 @@ def generate_offline_route_explanation(route_type, metrics):
         </ul>
         """
 
-def generate_emergency_summary(situation, location, coordinates, timestamp, battery_level=None, api_key=None):
+def generate_emergency_summary(situation, location, coordinates, timestamp, api_key=None):
     """Generate a highly concise, structured emergency summary message including location, detected risk, and details for responders."""
     has_key = configure_gemini(api_key)
-    
-    battery_str = f" [Battery: {battery_level}%]" if battery_level is not None else ""
     
     if not has_key:
         return (
@@ -262,13 +260,13 @@ def generate_emergency_summary(situation, location, coordinates, timestamp, batt
             f"Situation/Risk: {situation}\n"
             f"Location: {location}\n"
             f"Coordinates: {coordinates}\n"
-            f"Timestamp: {timestamp}{battery_str}\n"
+            f"Timestamp: {timestamp}\n"
             f"Status: Distress Signal Broadcasted. Please dispatch help."
         )
 
     prompt = f"""
     Write a highly structured emergency message that a user in distress can send to family members or police.
-    Include the exact location name, GPS coordinates, detected risk/situation (e.g. suspicious activity, voice panic cues), and battery status.
+    Include the exact location name, GPS coordinates, and detected risk/situation (e.g. suspicious activity, voice panic cues).
     Keep it concise, direct, and under 220 characters. Do not add any conversational fluff.
     
     Details:
@@ -276,7 +274,6 @@ def generate_emergency_summary(situation, location, coordinates, timestamp, batt
     - Location Name: {location}
     - GPS Coordinates: {coordinates}
     - Time: {timestamp}
-    - Device Battery: {battery_level}%
     
     Output Format (Make it extremely readable and direct):
     🚨 NARI SOS ALERT:
