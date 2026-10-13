@@ -18,3 +18,7 @@ scratch/
 *.exe
 temp.*
 
+# Generated media
+backend/static/audio/*.wav
+*.wav
+
