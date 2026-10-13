@@ -15,6 +15,8 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "nari")
 
 # Default API keys loaded from environment
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", os.getenv("open_ai_key", ""))
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
@@ -42,6 +44,21 @@ TEXTLOCAL_SENDER = os.getenv("TEXTLOCAL_SENDER", "")
 EXOTEL_ACCOUNT_SID = os.getenv("EXOTEL_ACCOUNT_SID", "")
 EXOTEL_AUTH_TOKEN = os.getenv("EXOTEL_AUTH_TOKEN", "")
 EXOTEL_FROM_NUMBER = os.getenv("EXOTEL_FROM_NUMBER", "")
+
+# Twilio WhatsApp (uses Twilio creds above + WhatsApp sandbox number)
+TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "")  # e.g. +14155238886
+
+# CallMeBot free WhatsApp API keys (phone→apikey map)
+# Set CALLMEBOT_KEYS in .env as comma-separated phone:apikey pairs
+# e.g. CALLMEBOT_KEYS=917007914594:123456,919123456789:654321
+_callmebot_raw = os.getenv("CALLMEBOT_KEYS", "")
+CALLMEBOT_API_KEYS = {}
+if _callmebot_raw:
+    for pair in _callmebot_raw.split(","):
+        pair = pair.strip()
+        if ":" in pair:
+            ph, key = pair.split(":", 1)
+            CALLMEBOT_API_KEYS[ph.strip()] = key.strip()
 
 
 # Fallback directories for local file DB if MongoDB is offline

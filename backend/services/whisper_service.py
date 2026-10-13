@@ -1,7 +1,8 @@
 import os
+import json
 import logging
-import google.generativeai as genai
-from backend.services.gemini_service import configure_gemini
+from groq import Groq
+from backend.config import GROQ_API_KEY
 
 logger = logging.getLogger("nari.whisper")
 
@@ -21,12 +22,9 @@ PANIC_PHRASES = [
     "kapadandi", "bhayam", "venakala padutunnaru", "sahayam"
 ]
 
-import json
-
 def transcribe_audio_file(file_bytes, filename="audio.wav", api_key=None):
-    """Transcribe an audio file using Gemini audio capacity or simulated fallback."""
-    from backend.config import GEMINI_API_KEY
-    key = api_key if (api_key and not api_key.startswith("sk-")) else GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")
+    """Transcribe an audio file using Groq Whisper API or simulated fallback."""
+    key = api_key if (isinstance(api_key, str) and api_key.startswith("gsk_")) else (GROQ_API_KEY or os.getenv("GROQ_API_KEY", ""))
     
     # Fast credit-saving parser for simulated triggers
     lower_fn = filename.lower()
@@ -44,38 +42,15 @@ def transcribe_audio_file(file_bytes, filename="audio.wav", api_key=None):
         with open(temp_path, "wb") as f:
             f.write(file_bytes)
             
-        logger.info(f"Uploading {temp_path} to Gemini for transcription...")
-        genai.configure(api_key=key)
-        uploaded_file = genai.upload_file(path=temp_path)
-        
-        models_to_try = ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.0-flash']
-        transcript = None
-        
-        prompt = (
-            "Transcribe this audio file accurately. "
-            "Return ONLY the transcribed text in its native language/script. "
-            "Do not add introductions, explanations, or wrappers."
-        )
-        
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content([uploaded_file, prompt])
-                transcript = response.text.strip()
-                break
-            except Exception as model_err:
-                logger.warning(f"Transcription Model {model_name} failed: {model_err}. Trying next...")
-                continue
-                
-        if not transcript:
-            raise Exception("All Gemini models failed to transcribe audio.")
-            
-        try:
-            genai.delete_file(uploaded_file.name)
-        except Exception as delete_err:
-            logger.warning(f"Failed to delete uploaded file from Gemini server: {delete_err}")
-            
-        return transcript
+        logger.info(f"Transcribing {temp_path} using Groq Whisper API...")
+        client = Groq(api_key=key)
+        with open(temp_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                file=(filename, audio_file.read()),
+                model="whisper-large-v3-turbo",
+                response_format="text"
+            )
+        return str(transcription).strip()
     except Exception as e:
         logger.error(f"Audio transcription failed: {e}. Falling back to simulation.")
         return mock_stt_fallback(filename)
@@ -87,9 +62,8 @@ def transcribe_audio_file(file_bytes, filename="audio.wav", api_key=None):
             pass
 
 def analyze_voice_audio(file_bytes, filename="audio.wav", api_key=None):
-    """Analyze the audio file using Gemini to transcribe and detect panic, fear, or distress in voice/tone/words."""
-    from backend.config import GEMINI_API_KEY
-    key = api_key if (api_key and not api_key.startswith("sk-")) else GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")
+    """Analyze audio file using Groq Whisper + Groq LLM panic classifier."""
+    key = api_key or GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
     
     # Fast credit-saving parser for simulated triggers
     lower_fn = filename.lower()
@@ -101,57 +75,30 @@ def analyze_voice_audio(file_bytes, filename="audio.wav", api_key=None):
         logger.info("Operating in offline mock mode for voice panic.")
         return mock_voice_analysis(filename)
         
-    temp_path = f"temp_{filename}"
     try:
-        with open(temp_path, "wb") as f:
-            f.write(file_bytes)
+        transcript = transcribe_audio_file(file_bytes, filename=filename, api_key=key)
+        is_panic, words = check_for_panic(transcript)
+
+        # Call Groq LLM to perform sentiment and distress analysis on transcript
+        from backend.services.gemini_service import _call_groq
+        prompt = f"""
+        Analyze this user audio transcript for distress and safety panic:
+        "{transcript}"
         
-        logger.info(f"Uploading {temp_path} to Gemini for multimodal voice panic analysis...")
-        genai.configure(api_key=key)
-        uploaded_file = genai.upload_file(path=temp_path)
-        
-        models_to_try = ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.0-flash']
-        response_text = None
-        
-        prompt = """
-        You are the voice analysis security module of Nari, an AI safety assistant.
-        Analyze this audio recording of a user's voice.
-        
-        1. Transcribe the spoken text accurately.
-        2. Analyze the emotional tone, pitch, speed, and vocabulary of the voice to detect if there is any panic, fear, distress, or danger.
-        3. Identify specific indicators of distress/panic (e.g., screaming, breathing heavily, crying, or speaking urgently).
-        
-        Your response must be a valid JSON object containing exactly these fields:
-        {
-            "transcript": "Transcribed text",
-            "panic_detected": true/false,
-            "distress_indicators": ["panic", "fear", "distress", "urgency", "etc"],
-            "explanation": "Detailed explanation of the emotional state (panic, fear, distress, etc.) detected from both the speech content and voice tone."
-        }
+        Return a valid JSON object strictly matching this format (no ticks or markdown):
+        {{
+            "transcript": {json.dumps(transcript)},
+            "panic_detected": boolean,
+            "distress_indicators": ["list", "of", "keywords"],
+            "explanation": "Detailed explanation of emotional distress/panic level"
+        }}
         """
-        
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    [uploaded_file, prompt],
-                    generation_config={"response_mime_type": "application/json"}
-                )
-                response_text = response.text.strip()
-                break
-            except Exception as model_err:
-                logger.warning(f"STT Model {model_name} failed: {model_err}. Trying next...")
-                continue
-                
-        if not response_text:
-            raise Exception("All Gemini models failed to analyze voice audio.")
-            
-        try:
-            genai.delete_file(uploaded_file.name)
-        except Exception as delete_err:
-            logger.warning(f"Failed to delete uploaded file from Gemini server: {delete_err}")
-            
-        return json.loads(response_text)
+        response_text = _call_groq([{"role": "user", "content": prompt}], api_key=key)
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]
+        return json.loads(response_text.strip())
     except Exception as e:
         logger.error(f"Voice panic analysis failed: {e}. Falling back to simulation.")
         return mock_voice_analysis(filename)

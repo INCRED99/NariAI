@@ -55,16 +55,14 @@ import os
 os.makedirs("backend/static/audio", exist_ok=True)
 app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 
-# Register route modules
-app.include_router(auth.router, prefix="/api")
-app.include_router(risk_assessment.router, prefix="/api")
-app.include_router(sos.router, prefix="/api")
-app.include_router(routes.router, prefix="/api")
-app.include_router(nearby.router, prefix="/api")
-app.include_router(profile.router, prefix="/api")
-app.include_router(voice.router, prefix="/api")
-app.include_router(chat.router, prefix="/api")
-app.include_router(rag.router, prefix="/api")
+# Register route modules (support both /api prefix and root prefix)
+for r in [auth.router, risk_assessment.router, sos.router, routes.router, nearby.router, profile.router, voice.router, chat.router, rag.router]:
+    app.include_router(r, prefix="/api")
+    app.include_router(r)
+
+# Alias /routes for frontend route calls
+app.include_router(routes.router, prefix="/api/routes")
+app.include_router(routes.router, prefix="/routes")
 
 @app.on_event("startup")
 def startup_event():

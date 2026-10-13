@@ -35,9 +35,9 @@ class RouteResponse(BaseModel):
     destination: str
     routes: List[RouteItem]
 
-# Pre-defined Noida Sector 62 coordinates for fallback paths
+# Pre-defined coordinates for fallback paths
 FALLBACK_SAFE_PATH = [
-    [28.6273, 77.3725],  # Sector 62 Main Road
+    [28.6273, 77.3725],  # Primary Origin
     [28.6250, 77.3500],  # Sector 61 Corridor
     [28.6120, 77.3500],  # Sector 50 Boulevard
     [28.5830, 77.3300],  # Sector 37 Metro Line
@@ -45,14 +45,14 @@ FALLBACK_SAFE_PATH = [
 ]
 
 FALLBACK_FASTEST_PATH = [
-    [28.6273, 77.3725],  # Sector 62
+    [28.6273, 77.3725],  # Primary Origin
     [28.6050, 77.3600],  # Industrial Area Block B (Dark Stretch)
     [28.5900, 77.3400],  # Sector 34 Back lanes
     [28.5730, 77.3220]   # Sector 18
 ]
 
 FALLBACK_BALANCED_PATH = [
-    [28.6273, 77.3725],  # Sector 62
+    [28.6273, 77.3725],  # Primary Origin
     [28.6180, 77.3650],  # Sector 58 Commercial
     [28.6000, 77.3450],  # Sector 33 Residential
     [28.5850, 77.3350],  # Sector 36 Main Road
@@ -163,6 +163,7 @@ def interpolate_path(start_lat: float, start_lng: float, end_lat: float, end_lng
     return path
 
 @router.post("", response_model=RouteResponse)
+@router.post("/safe-path", response_model=RouteResponse)
 def get_safe_routes(request: RouteRequest, x_gemini_key: Optional[str] = Header(None), x_gmaps_key: Optional[str] = Header(None)):
     """Analyze alternative travel paths and return their safety metrics and explanation."""
     try:

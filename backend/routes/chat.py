@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from backend.config import GROQ_API_KEY
 from backend.database import get_user_profiles_col
 from backend.services import agent_service, memory_service
 
@@ -27,13 +28,27 @@ class ChatResponse(BaseModel):
 from backend.services.auth_helper import get_current_user_uid
 
 @router.post("", response_model=ChatResponse)
-def handle_chat_message(request: ChatRequest, authorization: Optional[str] = Header(None), x_gemini_key: Optional[str] = Header(None)):
+def handle_chat_message(
+    request: ChatRequest,
+    authorization: Optional[str] = Header(None),
+    x_gemini_key: Optional[str] = Header(None),
+    x_groq_key: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None)
+):
     """Analyze conversation history and reply using RAG context, LTM, and Safety agent state classifiers."""
     try:
-        # 1. Retrieve user's configured safe word and language preferences from MongoDB
-        uid = get_current_user_uid(authorization)
+        # 1. Retrieve user's UID (fall back to request.user_id / priya_sharma if unauthenticated)
+        uid = request.user_id or "priya_sharma"
+        if authorization and isinstance(authorization, str):
+            try:
+                uid = get_current_user_uid(authorization)
+            except Exception:
+                pass
+
+        api_key = next((k for k in [x_groq_key, x_api_key, x_gemini_key] if isinstance(k, str) and k.startswith("gsk_")), None) or GROQ_API_KEY
+
         profiles_col = get_user_profiles_col()
-        user_profile = profiles_col.find_one({"uid": uid})
+        user_profile = profiles_col.find_one({"uid": uid}) if profiles_col is not None else None
         
         safe_word = "Blue Moon"
         preferred_lang = "English (US)"
@@ -50,18 +65,17 @@ def handle_chat_message(request: ChatRequest, authorization: Optional[str] = Hea
             history=history_formatted,
             user_message=request.user_message,
             safe_word=safe_word,
-            api_key=x_gemini_key,
+            api_key=api_key,
             user_id=uid
         )
         
         # 4. Asynchronously extract and commit new LTM facts if situation is Normal/Warning
-        # (Avoid recording details during acute emergency alerts to keep pipelines focused)
         if agent_result["state"] != "Emergency":
             try:
                 memory_service.process_and_extract_memory(
                     user_message=request.user_message,
                     user_id=uid,
-                    api_key=x_gemini_key
+                    api_key=api_key
                 )
             except Exception as ex:
                 logger.error(f"LTM background memory extraction failed: {ex}")
@@ -73,6 +87,8 @@ def handle_chat_message(request: ChatRequest, authorization: Optional[str] = Hea
             is_emergency=agent_result["is_emergency"],
             threat_score=agent_result.get("threat_score", 0)
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Chat route processing failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

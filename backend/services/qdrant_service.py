@@ -1,7 +1,7 @@
+import os
 import logging
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
-import google.generativeai as genai
 from backend.services.gemini_service import configure_gemini
 
 logger = logging.getLogger("nari.qdrant")
@@ -121,36 +121,20 @@ def initialize_qdrant(api_key=None):
         logger.error(f"Error initializing Qdrant: {e}")
 
 def get_text_embedding(text, api_key=None):
-    """Generate embedding vector using Gemini API or OpenAI."""
-    from backend.config import GEMINI_API_KEY, OPENAI_API_KEY
-    key = api_key or OPENAI_API_KEY or GEMINI_API_KEY or os.getenv("OPENAI_API_KEY", os.getenv("open_ai_key", os.getenv("GEMINI_API_KEY", "")))
-    if not key:
+    """Generate embedding vector if OpenAI key is present; otherwise returns None for keyword fallback."""
+    from backend.config import OPENAI_API_KEY
+    raw_key = api_key if (isinstance(api_key, str) and api_key.startswith("sk-")) else None
+    key = raw_key or OPENAI_API_KEY or os.getenv("OPENAI_API_KEY", "")
+    if not isinstance(key, str) or not key.startswith("sk-"):
         return None
     try:
-        if key.startswith("sk-"):
-            from openai import OpenAI
-            client = OpenAI(api_key=key)
-            result = client.embeddings.create(
-                model="text-embedding-3-large",
-                input=[text]
-            )
-            return result.data[0].embedding
-        else:
-            has_key = configure_gemini(api_key)
-            if not has_key:
-                return None
-            result = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=text,
-                task_type="retrieval_document"
-            )
-            # Handle padding / truncation to match 3072 dimensions
-            emb = result['embedding']
-            if len(emb) < 3072:
-                emb = emb + [0.0] * (3072 - len(emb))
-            elif len(emb) > 3072:
-                emb = emb[:3072]
-            return emb
+        from openai import OpenAI
+        client = OpenAI(api_key=key)
+        result = client.embeddings.create(
+            model="text-embedding-3-large",
+            input=[text]
+        )
+        return result.data[0].embedding
     except Exception as e:
         logger.error(f"Error generating embedding: {e}")
         return None
@@ -162,11 +146,9 @@ def seed_documents(api_key=None):
     
     logger.info("Seeding Qdrant database...")
     for doc in SEED_DOCUMENTS:
-        vector = None
-        if has_key:
-            vector = get_text_embedding(doc["text"], api_key)
+        vector = get_text_embedding(doc["text"], api_key)
             
-        # Fallback dummy vector if no API key
+        # Fallback dummy vector if no embedding API key
         if not vector:
             # 3072-dim dummy vector for offline compatibility
             vector = [0.1 * (doc["id"] % 5)] * 3072
@@ -194,15 +176,10 @@ def seed_documents(api_key=None):
         logger.error(f"Failed to seed Qdrant: {e}")
 
 def search_safety_kb(query, limit=3, api_key=None):
-    """Search for relevant documents in vector store. Falls back to text search if no API key."""
-    has_key = configure_gemini(api_key)
-    
-    if not has_key:
-        logger.info("No Gemini Key. Running keyword search fallback over RAG documents.")
-        return keyword_search_fallback(query, limit)
-        
+    """Search for relevant documents in vector store. Uses keyword search fallback when vector embedding is unavailable."""
     query_vector = get_text_embedding(query, api_key)
     if not query_vector:
+        logger.info("Using keyword search over RAG documents.")
         return keyword_search_fallback(query, limit)
         
     try:

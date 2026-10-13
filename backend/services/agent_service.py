@@ -31,30 +31,27 @@ def run_safety_agent(history, user_message, safe_word="Blue Moon", api_key=None,
         logger.info("🚨 SOS Agent: Safe Word Triggered!")
         risk_evaluation = {
             "is_emergency": True,
+            "threat_score": 100,
             "next_best_action": f"🚨 SAFE WORD '{safe_word}' DETECTED! Activating immediate location broadcast & trust circle dispatch."
         }
         state = "Emergency"
     else:
-        # Evaluate conversation via Gemini risk parser
+        # Evaluate conversation via risk parser
         risk_evaluation = gemini_service.analyze_conversation_risk(transcript, api_key)
+        score = risk_evaluation.get("threat_score", 0)
         
-        # Check if emergency is detected
-        if risk_evaluation.get("is_emergency", False):
+        # SOS triggers ONLY if danger reaches 100
+        if score >= 100:
             state = "Emergency"
+        elif score >= 40:
+            state = "Warning"
         else:
-            # Check for lower level warnings (e.g. keywords about dark, following but not acute panic)
-            text_lower = user_message.lower()
-            warning_keywords = ["dark", "flicker", "broken", "deserted", "unlit", "isolated", "stranger"]
-            if any(w in text_lower for w in warning_keywords):
-                state = "Warning"
-            else:
-                state = "Normal"
+            state = "Normal"
 
     # 4. Extract action
     next_action = risk_evaluation.get("next_best_action", "")
     
     # 5. Fetch RAG content and LTM memories to build the customized reply
-    # Build a simple query to fetch context from RAG based on the user's message
     from backend.services.qdrant_service import search_safety_kb
     from backend.services.memory_service import get_memories_as_text
     
@@ -68,7 +65,7 @@ def run_safety_agent(history, user_message, safe_word="Blue Moon", api_key=None,
         user_message=user_message,
         memory_context=memory_context,
         rag_context=rag_context,
-        language="English (US)", # Will be updated dynamically in routes based on user profile
+        language="English (US)",
         api_key=api_key
     )
     
@@ -87,10 +84,12 @@ def run_safety_agent(history, user_message, safe_word="Blue Moon", api_key=None,
         next_action = "🚨 Safe word triggered. Alerting contacts."
 
     threat_score = risk_evaluation.get("threat_score", 0)
-    if state == "Emergency" or is_safe_word_triggered or is_sos_triggered:
+    if is_safe_word_triggered or is_sos_triggered or threat_score >= 100:
         threat_score = 100
-
-    is_emergency = is_safe_word_triggered or is_sos_triggered
+        state = "Emergency"
+        is_emergency = True
+    else:
+        is_emergency = False
 
     return {
         "state": state,

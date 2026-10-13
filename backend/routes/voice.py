@@ -6,6 +6,7 @@ from datetime import datetime
 from backend.services import whisper_service, gemini_service
 from backend.services.auth_helper import get_current_user_uid
 from backend.database import db_manager, get_user_profiles_col, get_incident_reports_col
+from backend.config import GROQ_API_KEY
 
 logger = logging.getLogger("nari.voice")
 router = APIRouter(prefix="/voice-panic", tags=["Voice Panic Detection"])
@@ -31,10 +32,15 @@ async def process_voice_panic(
     location_name: Optional[str] = Form(None),
     authorization: Optional[str] = Header(None),
     x_gemini_key: Optional[str] = Header(None),
+    x_groq_key: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None),
     x_gmaps_key: Optional[str] = Header(None)
 ):
     """Transcribe voice sample, verify database connection, analyze for distress words, and notify emergency contacts with live location."""
     try:
+        # Resolve the best available Groq API key
+        api_key = next((k for k in [x_groq_key, x_api_key, x_gemini_key] if isinstance(k, str) and k.startswith("gsk_")), None) or GROQ_API_KEY
+
         # 1. Check database connection
         db_connected, db_status = db_manager.check_connection_and_fallback()
 
@@ -42,7 +48,7 @@ async def process_voice_panic(
         contacts = []
         lat = latitude if latitude is not None else 28.6273
         lng = longitude if longitude is not None else 77.3725
-        resolved_loc_name = location_name if location_name is not None else "Sector 62 Noida"
+        resolved_loc_name = location_name if location_name is not None else "Current Location"
         
         if db_connected:
             try:
@@ -76,15 +82,12 @@ async def process_voice_panic(
             except Exception as ex:
                 logger.error(f"Error fetching user profile from database: {ex}")
 
-        # Resolve address name dynamically using Google Maps API if key is present
-        from backend.config import GOOGLE_MAPS_API_KEY
+        # Resolve address name dynamically using OpenStreetMap Nominatim
         from backend.routes.nearby import reverse_geocode
         
-        gmaps_key = x_gmaps_key or GOOGLE_MAPS_API_KEY
-        if gmaps_key:
-            address = reverse_geocode(lat, lng, gmaps_key)
-            if address:
-                resolved_loc_name = address
+        address = reverse_geocode(lat, lng)
+        if address:
+            resolved_loc_name = address
 
         # Default fallback contacts if database has none
         if not contacts:
@@ -101,7 +104,7 @@ async def process_voice_panic(
         analysis = whisper_service.analyze_voice_audio(
             file_bytes=content,
             filename=filename,
-            api_key=x_gemini_key
+            api_key=api_key
         )
         
         transcript = analysis.get("transcript", "")
@@ -133,8 +136,7 @@ async def process_voice_panic(
                     location=resolved_loc_name,
                     coordinates=coordinates,
                     timestamp=timestamp_str,
-                    battery_level=85,
-                    api_key=x_gemini_key
+                    api_key=api_key
                 )
                 
                 # Save reported incident in database

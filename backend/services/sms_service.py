@@ -146,12 +146,12 @@ def send_single_sms(to_phone: str, body: str, provider: str = None) -> dict:
 def broadcast_emergency_sms(contacts: list, base_message: str, latitude: float = None, longitude: float = None) -> list:
     """
     Broadcasts emergency messages to a list of contacts.
-    Automatically appends a clickable Google Maps live tracking URL if coordinates are available.
+    Automatically appends a clickable OpenStreetMap live tracking URL if coordinates are available.
     """
     final_body = base_message
     if latitude is not None and longitude is not None:
-        maps_link = f"https://maps.google.com/?q={latitude:.6f},{longitude:.6f}"
-        if "maps.google.com" not in final_body:
+        maps_link = f"https://www.openstreetmap.org/?mlat={latitude:.6f}&mlon={longitude:.6f}#map=18/{latitude:.6f}/{longitude:.6f}"
+        if "openstreetmap.org" not in final_body:
             final_body += f"\nLive Map: {maps_link}"
             
     results = []
