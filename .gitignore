@@ -1,0 +1,20 @@
+# Credentials and Configuration
+backend/serviceaccount.json
+.env
+
+# Python Caches & Temporary Files
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# System and IDE Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+venv/
+scratch/
+*.exe
+temp.*
+
