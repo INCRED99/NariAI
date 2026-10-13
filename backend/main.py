@@ -50,10 +50,11 @@ app.add_middleware(
 
 # Mount static files to serve emergency audio recordings
 from fastapi.staticfiles import StaticFiles
-import os
 
-os.makedirs("backend/static/audio", exist_ok=True)
-app.mount("/static", StaticFiles(directory="backend/static"), name="static")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(BASE_DIR, "static")
+os.makedirs(os.path.join(static_dir, "audio"), exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Register route modules (support both /api prefix and root prefix)
 for r in [auth.router, risk_assessment.router, sos.router, routes.router, nearby.router, profile.router, voice.router, chat.router, rag.router]:

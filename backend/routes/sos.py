@@ -221,14 +221,16 @@ import shutil
 import uuid
 import os
 
+AUDIO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "audio")
+
 @router.post("/upload-audio")
 def upload_sos_audio(request: Request, file: UploadFile = File(...)):
     """Upload dynamic emergency audio WAV recording captured by speech listener."""
     try:
-        os.makedirs("backend/static/audio", exist_ok=True)
+        os.makedirs(AUDIO_DIR, exist_ok=True)
         file_id = str(uuid.uuid4())
         filename = f"SOS_{file_id}.wav"
-        file_path = os.path.join("backend/static/audio", filename)
+        file_path = os.path.join(AUDIO_DIR, filename)
         
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -245,7 +247,7 @@ def upload_sos_audio(request: Request, file: UploadFile = File(...)):
 def delete_sos_audio(filename: str):
     """Delete safety audio file once SOS is resolved/reset."""
     try:
-        file_path = os.path.join("backend/static/audio", filename)
+        file_path = os.path.join(AUDIO_DIR, filename)
         if os.path.exists(file_path):
             os.remove(file_path)
             return {"status": "success", "message": "Audio file deleted"}
