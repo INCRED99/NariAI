@@ -236,8 +236,8 @@ def upload_sos_audio(request: Request, file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
             
         # Resolve public URL — use https on Render, http on localhost
-        host = request.headers.get("host", "localhost:8000")
-        scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host", "localhost:8000")
+        scheme = request.headers.get("x-forwarded-proto") or ("https" if "render.com" in host else "http")
         audio_url = f"{scheme}://{host}/static/audio/{filename}"
         return {"audio_url": audio_url, "filename": filename}
     except Exception as e:

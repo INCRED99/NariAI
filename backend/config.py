@@ -1,14 +1,18 @@
 import os
 
-# Load environment variables from .env if present
-dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
-if os.path.exists(dotenv_path):
-    with open(dotenv_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, val = line.split("=", 1)
-                os.environ[key.strip()] = val.strip()
+# Load environment variables from .env if present (without overwriting host-provided env vars)
+potential_dotenv_paths = [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+]
+for dotenv_path in potential_dotenv_paths:
+    if os.path.exists(dotenv_path):
+        with open(dotenv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip())
 
 # Standard config variables
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")

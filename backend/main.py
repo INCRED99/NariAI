@@ -4,10 +4,13 @@ import json
 import uvicorn
 import firebase_admin
 
-# Ensure the parent directory is in sys.path to allow running directly from inside backend/
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+# Ensure the parent directory and current directory are in sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+for p in [parent_dir, current_dir]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
 from firebase_admin import credentials
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,16 +21,32 @@ if not firebase_admin._apps:
     firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 
     if firebase_json:
-        firebase_dict = json.loads(firebase_json)
-        cred = credentials.Certificate(firebase_dict)
-        firebase_admin.initialize_app(cred)
-    else:
-        # Fallback to local service account file
-        if os.path.exists(FIREBASE_SERVICE_ACCOUNT_PATH):
+        try:
+            # Check if base64 encoded
+            raw_content = firebase_json.strip()
+            if not raw_content.startswith("{"):
+                try:
+                    import base64
+                    decoded = base64.b64decode(raw_content).decode("utf-8")
+                    if decoded.strip().startswith("{"):
+                        raw_content = decoded
+                except Exception:
+                    pass
+            firebase_dict = json.loads(raw_content)
+            cred = credentials.Certificate(firebase_dict)
+            firebase_admin.initialize_app(cred)
+            print("INFO: Firebase Admin successfully initialized from FIREBASE_SERVICE_ACCOUNT env var.")
+        except Exception as e:
+            print(f"WARNING: Error initializing Firebase Admin from FIREBASE_SERVICE_ACCOUNT env var: {e}")
+    elif os.path.exists(FIREBASE_SERVICE_ACCOUNT_PATH):
+        try:
             cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_PATH)
             firebase_admin.initialize_app(cred)
-        else:
-            raise RuntimeError("FIREBASE_SERVICE_ACCOUNT environment variable is not set and backend/serviceaccount.json was not found.")
+            print("INFO: Firebase Admin successfully initialized from local serviceaccount.json.")
+        except Exception as e:
+            print(f"WARNING: Error initializing Firebase Admin from serviceaccount.json: {e}")
+    else:
+        print("WARNING: Neither FIREBASE_SERVICE_ACCOUNT env var nor backend/serviceaccount.json found. Firebase authentication endpoints will require valid credentials.")
 
 from backend.routes import risk_assessment, sos, routes, nearby, profile, voice, chat, rag, auth
 from backend.database import seed_default_user
@@ -39,10 +58,16 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for frontend Streamlit requests
+# Enable CORS for frontend requests (supports local dev and Vercel deployments)
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+if not allowed_origins:
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app" if "*" in allowed_origins else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
