@@ -1,13 +1,17 @@
 import axios from 'axios';
 
 // Base API Client pointing to FastAPI backend
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+// Strips trailing slashes to ensure paths append cleanly
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
 const client = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  // Accommodate Render free-tier cold starts (spins down after 15m of inactivity)
+  timeout: 60000,
 });
 
 // Interceptor to inject stored Auth Token and API Key overrides
