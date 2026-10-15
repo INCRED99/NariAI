@@ -63,7 +63,7 @@ const DashboardPage = ({ onTriggerSos }) => {
       }}>
         <div>
           <h2 style={{ fontSize: '24px', fontWeight: '800', marginBottom: '6px' }}>
-            Welcome back, {user?.name || 'Priya'} 👋
+            Welcome back, {user?.name ? user.name.split(' ')[0] : (user?.email ? user.email.split('@')[0] : 'there')} 👋
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
             Nari AI Sentinel is actively monitoring your location & surrounding safety signals.

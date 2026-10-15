@@ -16,28 +16,24 @@ class ContactItem(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     name: str
-    phone: str
-    preferred_language: str
-    safe_word: str
-    home_address: str
-    home_lat: float
-    home_lng: float
-    office_address: str
-    office_lat: float
-    office_lng: float
-    travel_routine: str
-    emergency_contacts: List[ContactItem]
+    phone: Optional[str] = ""
+    preferred_language: Optional[str] = "English (US)"
+    safe_word: Optional[str] = "Blue Moon"
+    home_address: Optional[str] = ""
+    home_lat: Optional[float] = 0.0
+    home_lng: Optional[float] = 0.0
+    office_address: Optional[str] = ""
+    office_lat: Optional[float] = 0.0
+    office_lng: Optional[float] = 0.0
+    travel_routine: Optional[str] = ""
+    emergency_contacts: Optional[List[ContactItem]] = []
 
 @router.get("")
 def get_profile(authorization: Optional[str] = Header(None)):
-    """Retrieve user profile configurations and long-term memory statements."""
     try:
-        uid = "priya_sharma"
-        if authorization:
-            try:
-                uid = get_current_user_uid(authorization)
-            except Exception:
-                pass
+        if not authorization:
+            raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
+        uid = get_current_user_uid(authorization)
 
         col = get_user_profiles_col()
         profile = col.find_one({"uid": uid}) if col is not None else None
@@ -118,12 +114,9 @@ def update_profile(
 ):
     """Save user parameters and extract long-term safety memory cues."""
     try:
-        uid = "priya_sharma"
-        if authorization:
-            try:
-                uid = get_current_user_uid(authorization)
-            except Exception:
-                pass
+        if not authorization:
+            raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
+        uid = get_current_user_uid(authorization)
 
         api_key = x_groq_key or x_api_key or x_gemini_key
         col = get_user_profiles_col()

@@ -79,7 +79,8 @@ Verify by opening `https://nari-backend.onrender.com/` in your browser. You shou
 | Key | Value | Notes |
 |---|---|---|
 | `VITE_API_BASE_URL` | `https://your-backend.onrender.com/api` | Replace with your Render URL + `/api` |
-| `VITE_GROQ_API_KEY` | `gsk_...` | Your Groq API Key |
+
+*(Note: Groq and Firebase service account keys are stored securely in backend environment variables on Render only. Never put AI API keys in frontend Vercel variables!)*
 
 5. Click **Deploy**.
 

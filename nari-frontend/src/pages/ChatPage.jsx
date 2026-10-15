@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, Mic, AlertTriangle, Shield, Paperclip, CheckCircle } from 'lucide-react';
 import client from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import ThreatGauge from '../components/ThreatGauge';
 
 const ChatPage = ({ onTriggerSos }) => {
+  const { user } = useAuth();
+  const userName = user?.name ? user.name.split(' ')[0] : 'there';
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: "Hello Priya! I'm Nari, your real-time safety companion. I monitor your surroundings and conversation for distress signals. How can I assist you right now?"
+      content: `Hello ${userName}! I'm Nari, your real-time safety companion. I monitor your surroundings and conversation for distress signals. How can I assist you right now?`
     }
   ]);
   const [input, setInput] = useState('');
@@ -38,10 +41,10 @@ const ChatPage = ({ onTriggerSos }) => {
       // Format chat history for API payload
       const historyFormatted = messages.map(m => ({ role: m.role, content: m.content }));
 
-      const res = await client.post('/conversation-risk', {
+      const res = await client.post('/chat', {
         history: historyFormatted,
         user_message: query,
-        user_id: 'priya_sharma'
+        user_id: user?.uid || user?.email || 'user'
       });
 
       const { reply, state, next_action, is_emergency, threat_score } = res.data;

@@ -10,11 +10,13 @@ from backend.database import get_user_profiles_col
 logger = logging.getLogger("nari.auth")
 router = APIRouter(prefix="/auth", tags=["User Authentication"])
 
+from typing import Optional
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     name: str
-    phone: str
+    phone: Optional[str] = ""
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -34,26 +36,27 @@ def format_phone_number(phone: str) -> str:
 def register_user(request: RegisterRequest):
     """Register a new user in Firebase Auth and seed their profile in MongoDB."""
     try:
-        formatted_phone = format_phone_number(request.phone)
-        
+        user_kwargs = {
+            "email": request.email,
+            "password": request.password,
+            "display_name": request.name
+        }
+        if request.phone and request.phone.strip():
+            user_kwargs["phone_number"] = format_phone_number(request.phone)
+
         # 1. Create user in Firebase Authentication
-        user_record = auth.create_user(
-            email=request.email,
-            password=request.password,
-            phone_number=formatted_phone,
-            display_name=request.name
-        )
+        user_record = auth.create_user(**user_kwargs)
         
         # 2. Seed profile in MongoDB linked to Firebase localId (UID)
         profiles_col = get_user_profiles_col()
         
         # Check if profile already exists (e.g. if DB got out of sync)
-        existing = profiles_col.find_one({"uid": user_record.uid})
+        existing = profiles_col.find_one({"uid": user_record.uid}) if profiles_col is not None else None
         if not existing:
             default_profile = {
                 "uid": user_record.uid,
                 "name": request.name,
-                "phone": request.phone,
+                "phone": request.phone or "",
                 "preferred_language": "English (US)",
                 "safe_word": "Blue Moon",
                 "home_address": "",
@@ -63,18 +66,31 @@ def register_user(request: RegisterRequest):
                 "office_lat": 0.0,
                 "office_lng": 0.0,
                 "travel_routine": "",
-                "emergency_contacts": [
-                    {"name": "Aarav Sharma", "relation": "Husband", "phone": "7007914594"},
-                    {"name": "Neha Verma", "relation": "Sister", "phone": "+91 91234 56789"},
-                    {"name": "Siddharth", "relation": "Roommate", "phone": "+91 99887 76655"}
-                ]
+                "emergency_contacts": []
             }
-            profiles_col.insert_one(default_profile)
+            if profiles_col is not None:
+                profiles_col.insert_one(default_profile)
             logger.info(f"Seeded MongoDB profile for newly registered user UID: {user_record.uid}")
+
+        token = None
+        if FIREBASE_API_KEY:
+            try:
+                sign_in_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
+                sign_res = requests.post(
+                    sign_in_url,
+                    json={"email": request.email, "password": request.password, "returnSecureToken": True},
+                    timeout=10
+                )
+                if sign_res.status_code == 200:
+                    token = sign_res.json().get("idToken")
+            except Exception:
+                pass
             
         return {
             "success": True,
             "uid": user_record.uid,
+            "token": token,
+            "idToken": token,
             "message": "User registered successfully."
         }
     except Exception as e:
@@ -142,6 +158,7 @@ def login_user(request: LoginRequest):
                 
             return {
                 "success": True,
+                "token": res_data.get("idToken"),
                 "idToken": res_data.get("idToken"),
                 "email": res_data.get("email"),
                 "uid": uid,

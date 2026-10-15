@@ -1,19 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import client from '../api/client';
 import { User, Shield, Phone, Key, Plus, Trash2, Save, Globe } from 'lucide-react';
 
 const ProfilePage = () => {
   const { user, setUser } = useAuth();
-  const [name, setName] = useState(user?.name || 'Priya Sharma');
-  const [email, setEmail] = useState(user?.email || 'priya.sharma@example.com');
-  const [phone, setPhone] = useState(user?.phone || '7007914594');
+  const [name, setName] = useState(user?.name || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [safeWord, setSafeWord] = useState(user?.safe_word || 'Blue Moon');
   const [lang, setLang] = useState(user?.preferred_language || 'English (US)');
-  const [contacts, setContacts] = useState(user?.emergency_contacts || [
-    { name: 'Aarav Sharma', relation: 'Husband', phone: '7007914594' },
-    { name: 'Neha Verma', relation: 'Sister', phone: '+91 91234 56789' }
-  ]);
+  const [contacts, setContacts] = useState(user?.emergency_contacts || []);
   const [savedMsg, setSavedMsg] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      if (user.name) setName(user.name);
+      if (user.email) setEmail(user.email);
+      if (user.phone) setPhone(user.phone);
+      if (user.safe_word) setSafeWord(user.safe_word);
+      if (user.preferred_language) setLang(user.preferred_language);
+      if (user.emergency_contacts) setContacts(user.emergency_contacts);
+    }
+  }, [user]);
 
   const [newContactName, setNewContactName] = useState('');
   const [newContactRelation, setNewContactRelation] = useState('');
@@ -22,7 +32,7 @@ const ProfilePage = () => {
   const handleAddContact = (e) => {
     e.preventDefault();
     if (!newContactName || !newContactPhone) return;
-    const updated = [...contacts, { name: newContactName, relation: newContactRelation || 'Friend', phone: newContactPhone }];
+    const updated = [...contacts, { name: newContactName, relation: newContactRelation || 'Contact', phone: newContactPhone }];
     setContacts(updated);
     setNewContactName('');
     setNewContactRelation('');
@@ -33,9 +43,10 @@ const ProfilePage = () => {
     setContacts(contacts.filter((_, i) => i !== index));
   };
 
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    setUser({
+    setSaving(true);
+    const updatedProfile = {
       ...user,
       name,
       email,
@@ -43,9 +54,26 @@ const ProfilePage = () => {
       safe_word: safeWord,
       preferred_language: lang,
       emergency_contacts: contacts
-    });
-    setSavedMsg('Profile updated successfully!');
-    setTimeout(() => setSavedMsg(''), 3000);
+    };
+
+    try {
+      await client.post('/profile', {
+        name,
+        phone,
+        preferred_language: lang,
+        safe_word: safeWord,
+        emergency_contacts: contacts
+      });
+      setUser(updatedProfile);
+      setSavedMsg('Profile updated successfully!');
+    } catch (err) {
+      console.warn('Profile save note:', err);
+      setUser(updatedProfile);
+      setSavedMsg('Profile saved locally.');
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSavedMsg(''), 3000);
+    }
   };
 
   return (

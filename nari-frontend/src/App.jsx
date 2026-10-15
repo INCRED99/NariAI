@@ -16,7 +16,7 @@ import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 
 const AppLayout = () => {
-  const { user, loading } = useAuth();
+  const { user, token, loading } = useAuth();
   const [isSosOpen, setIsSosOpen] = useState(false);
 
   if (loading) {
@@ -27,8 +27,8 @@ const AppLayout = () => {
     );
   }
 
-  // Allow instant access in demo session if no user authenticated
-  if (!user && !localStorage.getItem('nari_token')) {
+  // Require user authentication: first login must take place (no fallback user)
+  if (!token || !user) {
     return <AuthPage />;
   }
 

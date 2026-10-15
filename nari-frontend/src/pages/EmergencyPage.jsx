@@ -106,7 +106,7 @@ const EmergencyPage = () => {
       longitude,
       location_name: locationName,
       trigger_type: 'Emergency Chat SOS',
-      user_id: user?.uid || 'priya_sharma',
+      user_id: user?.uid || user?.email || 'user',
     }).catch(err => {
       console.warn('Backend SOS log error (WhatsApp already opened):', err);
     });

@@ -5,80 +5,84 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem('nari_token'));
+  const [token, setToken] = useState(() => localStorage.getItem('nari_token') || null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
-      // Fetch current user profile
-      client.get('/profile')
-        .then((res) => {
-          setUser(res.data);
-        })
-        .catch(() => {
-          // Fallback mock user if server offline or token invalid
-          setUser({
-            name: 'Priya Sharma',
-            email: 'priya.sharma@example.com',
-            phone: '7007914594',
-            safe_word: 'Blue Moon',
-            preferred_language: 'English (US)',
-            emergency_contacts: [
-              { name: 'Aarav Sharma', relation: 'Husband', phone: '7007914594' },
-              { name: 'Neha Verma', relation: 'Sister', phone: '+91 91234 56789' }
-            ]
-          });
-        })
-        .finally(() => setLoading(false));
-    } else {
-      // Demo/Guest default profile so app is immediately usable
-      setUser({
-        name: 'Priya Sharma',
-        email: 'priya.sharma@example.com',
-        phone: '7007914594',
-        safe_word: 'Blue Moon',
-        preferred_language: 'English (US)',
-        emergency_contacts: [
-          { name: 'Aarav Sharma', relation: 'Husband', phone: '7007914594' },
-          { name: 'Neha Verma', relation: 'Sister', phone: '+91 91234 56789' }
-        ]
-      });
+    const storedToken = localStorage.getItem('nari_token');
+    if (!storedToken) {
+      setUser(null);
+      setToken(null);
       setLoading(false);
+      return;
     }
-  }, [token]);
+
+    // Verify token with backend
+    client.get('/profile')
+      .then((res) => {
+        const profileData = res.data?.profile || res.data;
+        if (profileData && (profileData.name || profileData.email || profileData.uid)) {
+          setUser(profileData);
+          setToken(storedToken);
+        } else {
+          throw new Error('Invalid profile data');
+        }
+      })
+      .catch((err) => {
+        console.warn('Authentication token verification failed:', err?.message);
+        // Clear invalid session - strictly NO fallback user
+        localStorage.removeItem('nari_token');
+        setToken(null);
+        setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
 
   const login = async (email, password) => {
     try {
       const res = await client.post('/auth/login', { email, password });
-      if (res.data.token) {
-        localStorage.setItem('nari_token', res.data.token);
-        setToken(res.data.token);
-        setUser(res.data.user || user);
+      const authToken = res.data.token || res.data.idToken;
+      if (authToken) {
+        localStorage.setItem('nari_token', authToken);
+        setToken(authToken);
+        const profile = res.data.profile || { name: res.data.name || email, email, uid: res.data.uid };
+        setUser(profile);
         return { success: true };
+      } else {
+        throw new Error('Authentication succeeded but no security token was returned.');
       }
     } catch (err) {
-      // Offline fallback login for quick testing
-      const demoToken = 'demo_token_' + Date.now();
-      localStorage.setItem('nari_token', demoToken);
-      setToken(demoToken);
-      return { success: true, note: 'Logged in using demo session' };
+      // Strictly do not create fallback/demo tokens
+      localStorage.removeItem('nari_token');
+      setToken(null);
+      setUser(null);
+      const message = err.response?.data?.detail || err.message || 'Login failed. Please verify your email and password.';
+      throw new Error(message);
     }
   };
 
-  const register = async (email, password, name) => {
+  const register = async (email, password, name, phone = '') => {
     try {
-      const res = await client.post('/auth/register', { email, password, name });
-      if (res.data.token) {
-        localStorage.setItem('nari_token', res.data.token);
-        setToken(res.data.token);
-        setUser(res.data.user || { name, email });
+      const res = await client.post('/auth/register', { email, password, name, phone });
+      const authToken = res.data.token || res.data.idToken;
+      if (authToken) {
+        localStorage.setItem('nari_token', authToken);
+        setToken(authToken);
+        setUser({ name, email, uid: res.data.uid });
         return { success: true };
+      } else {
+        // Log in immediately to get token
+        return await login(email, password);
       }
     } catch (err) {
-      const demoToken = 'demo_token_' + Date.now();
-      localStorage.setItem('nari_token', demoToken);
-      setToken(demoToken);
-      return { success: true };
+      // Strictly do not create fallback/demo tokens
+      localStorage.removeItem('nari_token');
+      setToken(null);
+      setUser(null);
+      const message = err.response?.data?.detail || err.message || 'Registration failed. Please try again.';
+      throw new Error(message);
     }
   };
 

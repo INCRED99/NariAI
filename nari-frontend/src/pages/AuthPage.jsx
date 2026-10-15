@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Lock, Mail, User, ArrowRight } from 'lucide-react';
+import { Shield, Lock, Mail, User, Phone, ArrowRight } from 'lucide-react';
 
 const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,10 +22,10 @@ const AuthPage = () => {
       if (isLogin) {
         await login(email, password);
       } else {
-        await register(email, password, name);
+        await register(email, password, name, phone);
       }
     } catch (err) {
-      setError(err.message || 'Authentication failed. Proceeding in demo mode.');
+      setError(err.message || 'Authentication failed. Please verify your credentials.');
     } finally {
       setLoading(false);
     }
@@ -128,21 +129,38 @@ const AuthPage = () => {
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {!isLogin && (
-            <div>
-              <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Full Name</label>
-              <div style={{ position: 'relative' }}>
-                <User style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: 'var(--text-muted)' }} />
-                <input
-                  type="text"
-                  placeholder="Priya Sharma"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="glass-input"
-                  style={{ width: '100%', paddingLeft: '44px' }}
-                  required
-                />
+            <>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Full Name</label>
+                <div style={{ position: 'relative' }}>
+                  <User style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    placeholder="Enter your name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="glass-input"
+                    style={{ width: '100%', paddingLeft: '44px' }}
+                    required
+                  />
+                </div>
               </div>
-            </div>
+
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Phone Number (Optional)</label>
+                <div style={{ position: 'relative' }}>
+                  <Phone style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: 'var(--text-muted)' }} />
+                  <input
+                    type="tel"
+                    placeholder="+91 98765 43210"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="glass-input"
+                    style={{ width: '100%', paddingLeft: '44px' }}
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           <div>

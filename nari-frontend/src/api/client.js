@@ -14,28 +14,21 @@ const client = axios.create({
   timeout: 60000,
 });
 
-// Interceptor to inject stored Auth Token and API Key overrides
+// Proactively remove any legacy exposed key from localStorage
+if (typeof window !== 'undefined' && window.localStorage) {
+  try {
+    localStorage.removeItem('nari_groq_key');
+  } catch (e) {
+    // ignore
+  }
+}
+
+// Interceptor to inject stored Auth Token
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem('nari_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-
-  const DEFAULT_GROQ_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
-  let groqKey = localStorage.getItem('nari_groq_key');
-  if (!groqKey || groqKey.startsWith('gsk_Mnoe')) {
-    groqKey = DEFAULT_GROQ_KEY;
-    if (groqKey) {
-      localStorage.setItem('nari_groq_key', groqKey);
-    }
-  }
-
-  if (groqKey) {
-    config.headers['x-api-key'] = groqKey;
-    config.headers['x-groq-key'] = groqKey;
-    config.headers['x-gemini-key'] = groqKey;
-  }
-
   return config;
 }, (error) => Promise.reject(error));
 

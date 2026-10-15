@@ -110,11 +110,11 @@ const Header = ({ title = 'Dashboard' }) => {
             fontSize: '14px',
             color: '#fff'
           }}>
-            {user?.name ? user.name[0].toUpperCase() : 'P'}
+            {user?.name ? user.name[0].toUpperCase() : (user?.email ? user.email[0].toUpperCase() : 'U')}
           </div>
           <div style={{ maxWidth: '160px' }}>
             <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {user?.name || 'Priya Sharma'}
+              {user?.name || user?.email || 'User'}
             </p>
             <p style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={locationName}>
               {isLive ? '📍 ' : '📍 '}{locationName}

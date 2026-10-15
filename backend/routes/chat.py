@@ -7,7 +7,7 @@ from backend.database import get_user_profiles_col
 from backend.services import agent_service, memory_service
 
 logger = logging.getLogger("nari.chat")
-router = APIRouter(prefix="/conversation-risk", tags=["AI Chat & State Orchestration"])
+router = APIRouter(tags=["AI Chat & State Orchestration"])
 
 class MessageItem(BaseModel):
     role: str  # "user" | "assistant"
@@ -27,7 +27,8 @@ class ChatResponse(BaseModel):
 
 from backend.services.auth_helper import get_current_user_uid
 
-@router.post("", response_model=ChatResponse)
+@router.post("/conversation-risk", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse)
 def handle_chat_message(
     request: ChatRequest,
     authorization: Optional[str] = Header(None),

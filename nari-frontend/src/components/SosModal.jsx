@@ -79,7 +79,7 @@ const SosModal = ({ isOpen, onClose }) => {
         longitude: longitude,
         location_name: locationName,
         trigger_type: 'Manual UI Trigger',
-        user_id: user?.uid || 'priya_sharma'
+        user_id: user?.uid || user?.email || 'user'
       });
 
       if (res.data && res.data.success) {
