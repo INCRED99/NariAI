@@ -66,8 +66,10 @@ if not allowed_origins:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app" if "*" in allowed_origins else None,
+    allow_origins=[
+        "https://nari-ai-sandy.vercel.app",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

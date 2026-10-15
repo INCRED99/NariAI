@@ -1,0 +1,10 @@
+{
+  "name": "nari-project",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix nari-frontend",
+    "build": "npm run build --prefix nari-frontend",
+    "preview": "npm run preview --prefix nari-frontend"
+  }
+}
