@@ -178,7 +178,7 @@ class DatabaseManager:
 
     def connect(self):
         try:
-            logger.info(f"Connecting to MongoDB at {MONGO_URI}...")
+            logger.info(f"Connecting to MongoDB ...")
             try:
                 import certifi
                 tls_ca = certifi.where()
