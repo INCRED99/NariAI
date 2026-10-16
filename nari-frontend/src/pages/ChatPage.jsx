@@ -40,8 +40,8 @@ const ChatPage = ({ onTriggerSos }) => {
     // ── CLIENT-SIDE SAFE WORD CHECK ──────────────────────────────────────────
     // Synchronous check inside the click/submit handler — WhatsApp opens
     // immediately, before any async API call, to avoid popup blocker.
-    const safeWord = (user?.safe_word || 'blue moon').toLowerCase();
-    if (query.toLowerCase().includes(safeWord)) {
+    const safeWord = (user?.safe_word || 'blue moon').toLowerCase().trim();
+    if (safeWord.length >= 3 && query.toLowerCase().includes(safeWord)) {
       setActiveState('Emergency');
       setThreatScore(100);
       onTriggerSos(`🔑 SAFE WORD "${user?.safe_word || 'Blue Moon'}" detected in message`);
@@ -66,7 +66,7 @@ const ChatPage = ({ onTriggerSos }) => {
       if (next_action) setNextAction(next_action);
 
       if (threat_score >= 100 || is_emergency) {
-        onTriggerSos(`Risk level critical — ${state || 'Emergency'} state detected in conversation`);
+        onTriggerSos(`Risk level 100% critical — ${state || 'Emergency'} state detected in conversation`);
       }
     } catch (err) {
       console.error('Chat processing error:', err);
@@ -79,6 +79,19 @@ const ChatPage = ({ onTriggerSos }) => {
       setMessages((prev) => [...prev, { role: 'assistant', content: errorReply }]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Instant trigger as soon as user types the complete safe word into input
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setInput(val);
+    const safeWord = (user?.safe_word || 'blue moon').toLowerCase().trim();
+    if (safeWord.length >= 3 && val.toLowerCase().includes(safeWord)) {
+      setInput('');
+      setActiveState('Emergency');
+      setThreatScore(100);
+      onTriggerSos(`🔑 SAFE WORD "${user?.safe_word || 'Blue Moon'}" typed in chat input`);
     }
   };
 
@@ -198,7 +211,7 @@ const ChatPage = ({ onTriggerSos }) => {
             type="text"
             placeholder="Type your message or say your safe word..."
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             className="glass-input"
             style={{ flex: 1 }}
           />

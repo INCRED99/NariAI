@@ -12,7 +12,11 @@
 export const cleanPhone = (phone) => {
   if (!phone) return null;
   let clean = String(phone).replace(/[\s\-\(\)\+]/g, '');
-  if (clean.length === 10 && '6789'.includes(clean[0])) clean = '91' + clean;
+  if (clean.startsWith('0') && clean.length === 11) {
+    clean = '91' + clean.slice(1);
+  } else if (clean.length === 10 && '6789'.includes(clean[0])) {
+    clean = '91' + clean;
+  }
   return clean;
 };
 
@@ -66,16 +70,28 @@ export const openWhatsAppNow = (phone, message) => {
 };
 
 /**
- * One-stop helper: build message + open WhatsApp for the first emergency contact.
+ * One-stop helper: build message + open WhatsApp for emergency contacts.
+ * Never prompts the user — dispatches immediately.
  *
  * @param {string} situation    - Short description of the emergency
  * @param {object} locationInfo - { latitude, longitude, locationName }
- * @param {Array}  contacts     - Array of { name, phone } (uses first contact)
+ * @param {Array}  contacts     - Array of { name, phone } (uses first contact + others)
  */
 export const triggerWhatsAppSos = (situation, locationInfo = {}, contacts = []) => {
-  if (!contacts || contacts.length === 0) return; // No contacts set — do nothing
+  if (!contacts || !Array.isArray(contacts) || contacts.length === 0) return; // No contacts set — do nothing
   const firstContact = contacts[0];
   if (!firstContact?.phone) return;
   const message = buildSosMessage(situation, locationInfo);
   openWhatsAppNow(firstContact.phone, message);
+
+  if (contacts.length > 1) {
+    contacts.slice(1).forEach((c, idx) => {
+      const ph = cleanPhone(c?.phone);
+      if (ph) {
+        setTimeout(() => {
+          window.open(`https://wa.me/${ph}?text=${encodeURIComponent(message)}`, '_blank');
+        }, (idx + 1) * 700);
+      }
+    });
+  }
 };

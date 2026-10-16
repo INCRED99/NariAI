@@ -4,9 +4,9 @@ import client from '../api/client';
 import { useLocation } from '../context/LocationContext';
 import { useAuth } from '../context/AuthContext';
 
+import { triggerWhatsAppSos, cleanPhone } from '../utils/emergencyWhatsapp';
+
 const SosModal = ({ isOpen, onClose }) => {
-  const [countdown, setCountdown] = useState(5);
-  const [isSent, setIsSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [sosResponse, setSosResponse] = useState(null);
@@ -57,28 +57,18 @@ const SosModal = ({ isOpen, onClose }) => {
     setWaOpened(true);
   }, [waOpened]);
 
-  // ── IMMEDIATE WhatsApp dispatch on modal open (no waiting) ──────────────────
-  useEffect(() => {
-    if (isOpen && !waOpened) {
-      openWhatsAppFallback();
+  // Fallback / instant WhatsApp opener
+  const openWhatsAppFallback = useCallback(() => {
+    const contacts = user?.emergency_contacts?.length > 0 ? user.emergency_contacts : [];
+    if (contacts.length === 0) {
+      setWaOpened(true);
+      return; // No contacts set — skip dispatch
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]); // Only on open, not on every waOpened change
-  // ─────────────────────────────────────────────────────────────────────────────
+    triggerWhatsAppSos('Emergency SOS Triggered', { latitude, longitude, locationName }, contacts);
+    setWaOpened(true);
+  }, [user, latitude, longitude, locationName]);
 
-  useEffect(() => {
-    let timer;
-    if (isOpen && countdown > 0 && !isSent && !error) {
-      timer = setInterval(() => {
-        setCountdown((prev) => prev - 1);
-      }, 1000);
-    } else if (isOpen && countdown === 0 && !isSent && !loading && !error) {
-      triggerSos();
-    }
-    return () => clearInterval(timer);
-  }, [isOpen, countdown, isSent, loading, error]);
-
-  const triggerSos = async () => {
+  const triggerSos = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -93,57 +83,42 @@ const SosModal = ({ isOpen, onClose }) => {
 
       if (res.data && res.data.success) {
         setSosResponse(res.data);
-        setIsSent(true);
-
-        // Auto-open WhatsApp for each contact
-        if (res.data.whatsapp_links && res.data.whatsapp_links.length > 0) {
-          openWhatsAppForContacts(res.data.whatsapp_links);
-        }
       } else {
         setError('Server returned unsuccessful response.');
-        setIsSent(true);
-        openWhatsAppFallback();
       }
     } catch (err) {
       console.error('SOS dispatch error:', err);
       const errMsg = err.response?.data?.detail || err.message || 'Unknown error';
       setError(`SOS backend issue: ${errMsg}`);
-      setIsSent(true);
-      // Fallback: open WhatsApp locally even if backend is down
-      openWhatsAppFallback();
     } finally {
       setLoading(false);
     }
-  };
+  }, [latitude, longitude, locationName, user]);
 
-  // Fallback: generate wa.me links locally and open WhatsApp
-  const openWhatsAppFallback = useCallback(() => {
-    const contacts = user?.emergency_contacts?.length > 0 ? user.emergency_contacts : [];
-    if (contacts.length === 0) {
-      setWaOpened(true);
-      return; // No contacts set — skip dispatch
+  // ── IMMEDIATE WhatsApp & backend dispatch on modal open (no countdown, no delay) ──
+  useEffect(() => {
+    if (isOpen) {
+      if (!waOpened) {
+        openWhatsAppFallback();
+      }
+      triggerSos();
+    } else {
+      setWaOpened(false);
+      setError(null);
+      setSosResponse(null);
     }
-    const emergencyMsg = buildEmergencyMessage();
-    contacts.forEach((c, idx) => {
-      const waLink = generateLocalWaLink(c.phone, `🚨 SOS for ${c.name}!\n\n${emergencyMsg}`);
-      setTimeout(() => {
-        window.open(waLink, '_blank');
-      }, idx * 800);
-    });
-    setWaOpened(true);
-  }, [user, buildEmergencyMessage, generateLocalWaLink]);
+  }, [isOpen, waOpened, openWhatsAppFallback, triggerSos]);
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const handleRetry = () => {
     setError(null);
-    setIsSent(false);
     setSosResponse(null);
     setWaOpened(false);
-    setCountdown(0);
+    triggerSos();
+    openWhatsAppFallback();
   };
 
   const handleCancel = () => {
-    setCountdown(5);
-    setIsSent(false);
     setError(null);
     setSosResponse(null);
     setWaOpened(false);
@@ -190,78 +165,7 @@ const SosModal = ({ isOpen, onClose }) => {
         maxHeight: '90vh',
         overflowY: 'auto'
       }}>
-        {!isSent ? (
-          <>
-            <div style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '50%',
-              background: 'var(--emergency-gradient)',
-              margin: '0 auto 20px auto',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 35px rgba(255, 59, 48, 0.6)'
-            }} className="pulse-emergency">
-              <AlertTriangle style={{ width: '40px', height: '40px', color: '#fff' }} />
-            </div>
-
-            <h3 style={{ fontSize: '24px', fontWeight: '800', color: '#FF3B30', marginBottom: '8px' }}>
-              EMERGENCY SOS TRIGGERED
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '12px' }}>
-              Sending WhatsApp alerts with live GPS to emergency contacts in:
-            </p>
-
-            <div style={{
-              background: 'var(--bg-input)',
-              padding: '8px 14px',
-              borderRadius: '10px',
-              marginBottom: '20px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontFamily: 'monospace',
-              fontSize: '13px',
-              color: 'var(--accent-cyan)'
-            }}>
-              <MapPin style={{ width: '14px', height: '14px' }} />
-              <span>{latitude.toFixed(6)}, {longitude.toFixed(6)}</span>
-            </div>
-
-            <div style={{
-              fontSize: '54px',
-              fontWeight: '900',
-              color: '#FF3B30',
-              marginBottom: '28px',
-              fontFamily: 'monospace'
-            }}>
-              00:0{countdown}
-            </div>
-
-            <button
-              onClick={handleCancel}
-              style={{
-                width: '100%',
-                padding: '14px',
-                borderRadius: '12px',
-                background: 'var(--bg-input)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-primary)',
-                fontWeight: '700',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <X style={{ width: '18px', height: '18px' }} />
-              CANCEL EMERGENCY (FALSE ALARM)
-            </button>
-          </>
-        ) : (
-          <>
+        <>
             <div style={{
               width: '80px',
               height: '80px',
@@ -397,8 +301,7 @@ const SosModal = ({ isOpen, onClose }) => {
                 Close Window
               </button>
             </div>
-          </>
-        )}
+        </>
       </div>
     </div>
   );

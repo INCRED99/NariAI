@@ -3,6 +3,7 @@ import { Mic, MicOff, Send, ShieldAlert, CheckCircle2, RotateCcw, User, External
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from '../context/LocationContext';
 import client from '../api/client';
+import { openWhatsAppNow, buildSosMessage, cleanPhone } from '../utils/emergencyWhatsapp';
 
 const EmergencyPage = () => {
   const { user } = useAuth();
@@ -30,43 +31,14 @@ const EmergencyPage = () => {
   }, [chatMessages, liveTranscript]);
 
   // Helper: clean phone number
-  const cleanPhone = (phone) => {
-    if (!phone) return null;
-    let clean = String(phone).replace(/[\s\-\(\)\+]/g, '');
-    if (clean.length === 10 && '6789'.includes(clean[0])) clean = '91' + clean;
-    return clean;
-  };
-
-  // Build the complete SOS message text for WhatsApp
-  const buildSosMessage = useCallback((situation) => {
-    const loc = locationName || (latitude && longitude ? `${latitude.toFixed(4)}°N, ${longitude.toFixed(4)}°E` : 'Live Location');
-    const mapLink = (latitude && longitude)
-      ? `\n🗺️ Live Map: https://maps.google.com/?q=${latitude},${longitude}`
-      : '';
-    const now = new Date();
-    const timeStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-    return (
-      `🚨 NARI SOS ALERT!\n` +
-      `- SITUATION: ${situation}\n` +
-      `- LOCATION: ${loc}${mapLink}\n` +
-      `- TIME: ${timeStr}\n\n` +
-      `Please send help immediately!`
-    );
-  }, [latitude, longitude, locationName]);
+  const formatPhone = (phone) => cleanPhone(phone);
 
   // Immediately open WhatsApp to first contact — aborts silently if no contact set
   const openWhatsAppImmediately = useCallback((situationText) => {
     if (!firstContact?.phone) return;
-    const ph = cleanPhone(firstContact.phone);
-    if (!ph) return;
-    const fullMessage = buildSosMessage(situationText);
-    const waUrl = `https://wa.me/${ph}?text=${encodeURIComponent(fullMessage)}`;
-    const win = window.open(waUrl, '_blank');
-    if (!win || win.closed || typeof win.closed === 'undefined') {
-      window.location.href = waUrl;
-    }
-  }, [firstContact, buildSosMessage]);
+    const message = buildSosMessage(situationText, { latitude, longitude, locationName });
+    openWhatsAppNow(firstContact.phone, message);
+  }, [firstContact, latitude, longitude, locationName]);
 
   // Central dispatch: opens WhatsApp instantly & logs incident to backend asynchronously
   const sendAlert = useCallback((situationText) => {
@@ -80,7 +52,7 @@ const EmergencyPage = () => {
 
     // 2. Add user message + system confirmation to chat stream
     const systemMsg = firstContact
-      ? `⚡ WhatsApp opened & distress alert dispatched to ${firstContact.name} (${firstContact.phone}) with live location.`
+      ? `⚡ WhatsApp opened & distress alert dispatched to ${firstContact.name || 'Emergency Contact'} (${firstContact.phone || ''}) with live location.`
       : `⚠️ No emergency contact set — please add one in Settings to enable WhatsApp dispatch.`;
 
     setChatMessages(prev => [
@@ -104,6 +76,17 @@ const EmergencyPage = () => {
     });
   }, [openWhatsAppImmediately, firstContact, latitude, longitude, locationName, user]);
 
+  // Handle typing input changes (detects safe word immediately on keystroke)
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setInputText(val);
+    const safeWord = (user?.safe_word || 'blue moon').toLowerCase().trim();
+    if (safeWord.length >= 3 && val.toLowerCase().includes(safeWord)) {
+      setInputText('');
+      sendAlert(`🔑 SAFE WORD "${user?.safe_word || 'Blue Moon'}" detected in message`);
+    }
+  };
+
   // Handle typing send
   const handleSendText = (e) => {
     e?.preventDefault();
@@ -111,7 +94,11 @@ const EmergencyPage = () => {
     if (!text) return;
 
     setInputText('');
-    sendAlert(text);
+    const safeWord = (user?.safe_word || 'blue moon').toLowerCase().trim();
+    const situation = (safeWord.length >= 3 && text.toLowerCase().includes(safeWord))
+      ? `🔑 SAFE WORD "${user?.safe_word || 'Blue Moon'}" detected: ${text}`
+      : text;
+    sendAlert(situation);
 
     // Refocus input
     setTimeout(() => {
@@ -165,6 +152,18 @@ const EmergencyPage = () => {
       const combined = (finalTranscript + interim).trim();
       liveTranscriptRef.current = combined;
       setLiveTranscript(combined);
+
+      // Real-time voice safe word detection
+      const safeWord = (user?.safe_word || 'blue moon').toLowerCase().trim();
+      if (safeWord.length >= 3 && combined.toLowerCase().includes(safeWord) && !hasSentVoiceRef.current) {
+        hasSentVoiceRef.current = true;
+        try {
+          recognition.stop();
+        } catch (err) {}
+        setIsListening(false);
+        setLiveTranscript('');
+        sendAlert(`🔑 SAFE WORD "${user?.safe_word || 'Blue Moon'}" spoken: "${combined}"`);
+      }
     };
 
     recognition.onerror = (event) => {
@@ -212,10 +211,11 @@ const EmergencyPage = () => {
 
     if (!hasSentVoiceRef.current) {
       hasSentVoiceRef.current = true;
-      const speech = liveTranscriptRef.current.trim() || 'Urgent voice distress signal!';
+      const speech = liveTranscriptRef.current.trim();
+      const alertMsg = speech ? `🎙️ Voice: "${speech}"` : '🎙️ Voice listener stopped — Emergency SOS!';
       setLiveTranscript('');
       // Synchronously triggered inside the user's click -> WhatsApp opens immediately without popup block!
-      sendAlert(`🎙️ Voice: "${speech}"`);
+      sendAlert(alertMsg);
     }
   };
 
@@ -295,10 +295,10 @@ const EmergencyPage = () => {
           </div>
           <div style={{ flex: 1 }}>
             <p style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>
-              {firstContact.name}
+              {firstContact?.name || 'Emergency Contact'}
             </p>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-              {firstContact.relation || 'Emergency Contact'} • +{cleanPhone(firstContact.phone)}
+              {firstContact?.relation || 'Emergency Contact'} • +{cleanPhone(firstContact?.phone)}
             </p>
           </div>
           <div style={{
@@ -352,7 +352,11 @@ const EmergencyPage = () => {
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
             <ShieldAlert style={{ width: '42px', height: '42px', opacity: 0.3, margin: '0 auto 12px auto', display: 'block' }} />
             <p style={{ fontSize: '14px', margin: 0, color: 'var(--text-primary)' }}>
-              Ready to send emergency alert to <strong>{firstContact.name}</strong>.
+              {firstContact ? (
+                <>Ready to send emergency alert to <strong>{firstContact.name || 'Emergency Contact'}</strong>.</>
+              ) : (
+                <>Ready to send emergency alert to your emergency contact.</>
+              )}
             </p>
             <p style={{ fontSize: '12px', marginTop: '6px', opacity: 0.7 }}>
               Type your message below or tap the microphone to speak. WhatsApp opens immediately.
@@ -450,8 +454,8 @@ const EmergencyPage = () => {
           ref={inputRef}
           type="text"
           value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder={isListening ? 'Listening to voice... Tap mic to stop & send' : 'Type your emergency message...'}
+          onChange={handleInputChange}
+          placeholder={isListening ? 'Listening to voice... Tap mic to stop & send' : 'Type your emergency message or safe word...'}
           disabled={isListening}
           style={{
             flex: 1,
