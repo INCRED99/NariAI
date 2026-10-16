@@ -10,7 +10,7 @@
  * Assumes Indian numbers (prefix 91) if 10 digits starting with 6-9.
  */
 export const cleanPhone = (phone) => {
-  if (!phone) return '917007914594';
+  if (!phone) return null;
   let clean = String(phone).replace(/[\s\-\(\)\+]/g, '');
   if (clean.length === 10 && '6789'.includes(clean[0])) clean = '91' + clean;
   return clean;
@@ -57,12 +57,9 @@ export const buildSosMessage = (situation, { latitude, longitude, locationName }
  */
 export const openWhatsAppNow = (phone, message) => {
   const ph = cleanPhone(phone);
+  if (!ph) return; // No phone — abort silently
   const url = `https://wa.me/${ph}?text=${encodeURIComponent(message)}`;
-
-  // Try to open in a new tab synchronously (works when called from a user-gesture context)
   const win = window.open(url, '_blank');
-
-  // If popup was blocked, navigate the current window instead
   if (!win || win.closed || typeof win.closed === 'undefined') {
     window.location.href = url;
   }
@@ -76,7 +73,9 @@ export const openWhatsAppNow = (phone, message) => {
  * @param {Array}  contacts     - Array of { name, phone } (uses first contact)
  */
 export const triggerWhatsAppSos = (situation, locationInfo = {}, contacts = []) => {
-  const firstContact = contacts[0] || { phone: '917007914594' };
+  if (!contacts || contacts.length === 0) return; // No contacts set — do nothing
+  const firstContact = contacts[0];
+  if (!firstContact?.phone) return;
   const message = buildSosMessage(situation, locationInfo);
   openWhatsAppNow(firstContact.phone, message);
 };

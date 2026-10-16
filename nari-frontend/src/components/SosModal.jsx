@@ -118,14 +118,12 @@ const SosModal = ({ isOpen, onClose }) => {
 
   // Fallback: generate wa.me links locally and open WhatsApp
   const openWhatsAppFallback = useCallback(() => {
+    const contacts = user?.emergency_contacts?.length > 0 ? user.emergency_contacts : [];
+    if (contacts.length === 0) {
+      setWaOpened(true);
+      return; // No contacts set — skip dispatch
+    }
     const emergencyMsg = buildEmergencyMessage();
-    const contacts = (user?.emergency_contacts?.length > 0)
-      ? user.emergency_contacts
-      : [
-          { name: 'Aarav Sharma', phone: '7007914594' },
-          { name: 'Neha Verma', phone: '+91 91234 56789' }
-        ];
-
     contacts.forEach((c, idx) => {
       const waLink = generateLocalWaLink(c.phone, `🚨 SOS for ${c.name}!\n\n${emergencyMsg}`);
       setTimeout(() => {
@@ -154,22 +152,21 @@ const SosModal = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  // Derive contact names from response or user profile
+  // Derive contact names from response or user profile (no fallback)
   const contactNames = sosResponse?.contacts?.map(c => c.name).join(' & ')
     || user?.emergency_contacts?.map(c => c.name).join(' & ')
-    || 'Aarav Sharma & Neha Verma';
+    || null;
 
-  // Build WhatsApp links for display (from backend response or local fallback)
+  // Build WhatsApp links for display (from backend response or user contacts only)
   const displayWaLinks = sosResponse?.whatsapp_links?.length > 0
     ? sosResponse.whatsapp_links
-    : ((user?.emergency_contacts?.length > 0 ? user.emergency_contacts : [
-        { name: 'Aarav Sharma', phone: '7007914594' },
-        { name: 'Neha Verma', phone: '+91 91234 56789' }
-      ])).map(c => ({
+    : (user?.emergency_contacts?.length > 0 ? user.emergency_contacts : []).map(c => ({
         name: c.name,
         phone: c.phone,
         wa_link: generateLocalWaLink(c.phone, `🚨 SOS for ${c.name}!\n\n${buildEmergencyMessage()}`)
       }));
+
+
 
   return (
     <div style={{

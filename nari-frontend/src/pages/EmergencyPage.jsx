@@ -20,11 +20,9 @@ const EmergencyPage = () => {
   const liveTranscriptRef = useRef('');
   const hasSentVoiceRef = useRef(false);
 
-  // Get the first emergency contact — guard against empty array ([] is truthy!)
-  const contacts = (user?.emergency_contacts?.length > 0)
-    ? user.emergency_contacts
-    : [{ name: 'Aarav Sharma', relation: 'Husband', phone: '7007914594' }];
-  const firstContact = contacts[0] || { name: 'Aarav Sharma', relation: 'Husband', phone: '7007914594' };
+  // Get emergency contacts — no fallback data, only use what user has set
+  const contacts = (user?.emergency_contacts?.length > 0) ? user.emergency_contacts : [];
+  const firstContact = contacts[0] || null;
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -33,7 +31,7 @@ const EmergencyPage = () => {
 
   // Helper: clean phone number
   const cleanPhone = (phone) => {
-    if (!phone) return '917007914594';
+    if (!phone) return null;
     let clean = String(phone).replace(/[\s\-\(\)\+]/g, '');
     if (clean.length === 10 && '6789'.includes(clean[0])) clean = '91' + clean;
     return clean;
@@ -57,16 +55,14 @@ const EmergencyPage = () => {
     );
   }, [latitude, longitude, locationName]);
 
-  // Immediately open WhatsApp to first contact without asking or showing intermediate buttons
+  // Immediately open WhatsApp to first contact — aborts silently if no contact set
   const openWhatsAppImmediately = useCallback((situationText) => {
+    if (!firstContact?.phone) return;
     const ph = cleanPhone(firstContact.phone);
+    if (!ph) return;
     const fullMessage = buildSosMessage(situationText);
     const waUrl = `https://wa.me/${ph}?text=${encodeURIComponent(fullMessage)}`;
-
-    // 1. Synchronously open WhatsApp window/tab
     const win = window.open(waUrl, '_blank');
-
-    // 2. If the browser popup blocker intercepted window.open, directly navigate the current window
     if (!win || win.closed || typeof win.closed === 'undefined') {
       window.location.href = waUrl;
     }
@@ -79,22 +75,18 @@ const EmergencyPage = () => {
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // 1. IMMEDIATELY open WhatsApp (no confirmation, no wait)
+    // 1. IMMEDIATELY open WhatsApp (no-op if no contact set)
     openWhatsAppImmediately(text);
 
     // 2. Add user message + system confirmation to chat stream
+    const systemMsg = firstContact
+      ? `⚡ WhatsApp opened & distress alert dispatched to ${firstContact.name} (${firstContact.phone}) with live location.`
+      : `⚠️ No emergency contact set — please add one in Settings to enable WhatsApp dispatch.`;
+
     setChatMessages(prev => [
       ...prev,
-      {
-        role: 'user',
-        text,
-        time: timeStr,
-      },
-      {
-        role: 'system',
-        text: `⚡ WhatsApp opened & distress alert dispatched to ${firstContact.name} (${firstContact.phone}) with live location.`,
-        time: timeStr,
-      },
+      { role: 'user', text, time: timeStr },
+      { role: 'system', text: systemMsg, time: timeStr },
     ]);
 
     setLastDispatchedTime(timeStr);
@@ -285,39 +277,66 @@ const EmergencyPage = () => {
       </div>
 
       {/* Target Contact Banner */}
-      <div className="glass-panel" style={{
-        padding: '14px 20px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '14px',
-        background: 'rgba(37, 211, 102, 0.06)',
-        border: '1px solid rgba(37, 211, 102, 0.25)',
-      }}>
-        <div style={{
-          width: '40px', height: '40px', borderRadius: '50%',
-          background: 'rgba(37, 211, 102, 0.2)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      {firstContact ? (
+        <div className="glass-panel" style={{
+          padding: '14px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          background: 'rgba(37, 211, 102, 0.06)',
+          border: '1px solid rgba(37, 211, 102, 0.25)',
         }}>
-          <User style={{ width: '20px', height: '20px', color: '#25D366' }} />
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '50%',
+            background: 'rgba(37, 211, 102, 0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <User style={{ width: '20px', height: '20px', color: '#25D366' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>
+              {firstContact.name}
+            </p>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+              {firstContact.relation || 'Emergency Contact'} • +{cleanPhone(firstContact.phone)}
+            </p>
+          </div>
+          <div style={{
+            padding: '4px 12px', borderRadius: '20px',
+            background: 'rgba(37, 211, 102, 0.2)',
+            fontSize: '11px', fontWeight: '700', color: '#25D366',
+            display: 'flex', alignItems: 'center', gap: '5px'
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#25D366' }} />
+            Instant WhatsApp Dispatch
+          </div>
         </div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>
-            {firstContact.name}
-          </p>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-            {firstContact.relation || 'Emergency Contact'} • +91 {cleanPhone(firstContact.phone).slice(-10)}
-          </p>
-        </div>
-        <div style={{
-          padding: '4px 12px', borderRadius: '20px',
-          background: 'rgba(37, 211, 102, 0.2)',
-          fontSize: '11px', fontWeight: '700', color: '#25D366',
-          display: 'flex', alignItems: 'center', gap: '5px'
+      ) : (
+        <div className="glass-panel" style={{
+          padding: '14px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          background: 'rgba(255, 149, 0, 0.06)',
+          border: '1px solid rgba(255, 149, 0, 0.35)',
         }}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#25D366' }} />
-          Instant WhatsApp Dispatch
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '50%',
+            background: 'rgba(255, 149, 0, 0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <User style={{ width: '20px', height: '20px', color: '#FF9500' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: '14px', fontWeight: '700', color: '#FF9500', margin: 0 }}>
+              No emergency contact set
+            </p>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+              Go to Settings › Profile to add a trusted contact for WhatsApp dispatch.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Chat Messages Area */}
       <div className="glass-panel" style={{

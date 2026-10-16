@@ -25,7 +25,7 @@ const AppLayout = () => {
   // Immediately open WhatsApp then show the SosModal for status feedback
   const handleTriggerSos = useCallback((situationOverride) => {
     const situation = situationOverride || 'Manual SOS Trigger';
-    const contacts = user?.emergency_contacts || [{ name: 'Emergency Contact', phone: '7007914594' }];
+    const contacts = user?.emergency_contacts || [];
     triggerWhatsAppSos(situation, { latitude, longitude, locationName }, contacts);
     setIsSosOpen(true);
   }, [user, latitude, longitude, locationName]);
