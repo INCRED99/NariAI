@@ -4,9 +4,29 @@ import client from '../api/client';
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [user, setUserState] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nari_user_profile');
+      return cached ? JSON.parse(cached) : null;
+    } catch (e) {
+      return null;
+    }
+  });
   const [token, setToken] = useState(() => localStorage.getItem('nari_token') || null);
   const [loading, setLoading] = useState(true);
+
+  const setUser = (newUser) => {
+    setUserState(newUser);
+    try {
+      if (newUser) {
+        localStorage.setItem('nari_user_profile', JSON.stringify(newUser));
+      } else {
+        localStorage.removeItem('nari_user_profile');
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     const storedToken = localStorage.getItem('nari_token');
@@ -22,18 +42,29 @@ export const AuthProvider = ({ children }) => {
       .then((res) => {
         const profileData = res.data?.profile || res.data;
         if (profileData && (profileData.name || profileData.email || profileData.uid)) {
-          setUser(profileData);
+          // Merge with any existing contacts from cache if backend returned empty array
+          setUser((prev) => {
+            const mergedContacts = (profileData.emergency_contacts && profileData.emergency_contacts.length > 0)
+              ? profileData.emergency_contacts
+              : (prev?.emergency_contacts || []);
+            return {
+              ...prev,
+              ...profileData,
+              emergency_contacts: mergedContacts
+            };
+          });
           setToken(storedToken);
-        } else {
-          throw new Error('Invalid profile data');
         }
       })
       .catch((err) => {
-        console.warn('Authentication token verification failed:', err?.message);
-        // Clear invalid session - strictly NO fallback user
-        localStorage.removeItem('nari_token');
-        setToken(null);
-        setUser(null);
+        console.warn('Authentication token verification notice:', err?.message);
+        // Only clear session if backend explicitly responds with 401 Unauthorized
+        if (err.response?.status === 401) {
+          localStorage.removeItem('nari_token');
+          localStorage.removeItem('nari_user_profile');
+          setToken(null);
+          setUserState(null);
+        }
       })
       .finally(() => {
         setLoading(false);

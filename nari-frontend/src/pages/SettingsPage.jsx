@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
-import { Settings, Moon, Sun, Save, Check, Bell, Shield, Volume2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Settings, Moon, Sun, Save, Check, Bell, Shield, Volume2, Phone, ChevronRight, User } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 const SettingsPage = () => {
   const { theme, toggleTheme } = useTheme();
+  const { user } = useAuth();
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [autoOpenWa, setAutoOpenWa] = useState(true);
   const [saved, setSaved] = useState(false);
+
+  const contacts = user?.emergency_contacts || [];
 
   const handleSaveSettings = (e) => {
     e.preventDefault();
@@ -117,6 +122,62 @@ const SettingsPage = () => {
           </button>
 
         </form>
+      </div>
+
+      {/* Emergency Contacts Overview in Settings */}
+      <div className="glass-panel" style={{ padding: '28px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+            <Phone style={{ color: 'var(--accent-cyan)', width: '20px', height: '20px' }} />
+            Emergency Contacts
+          </h3>
+          <Link
+            to="/profile"
+            className="gradient-btn"
+            style={{ padding: '8px 16px', fontSize: '12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            Manage Contacts <ChevronRight style={{ width: '14px', height: '14px' }} />
+          </Link>
+        </div>
+
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+          SOS alerts and live location updates are sent to these contacts. Manage or add new contacts in your Profile.
+        </p>
+
+        {contacts.length === 0 ? (
+          <div style={{ padding: '18px', borderRadius: '12px', background: 'rgba(255, 149, 0, 0.08)', border: '1px solid rgba(255, 149, 0, 0.35)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#FF9500', margin: 0 }}>No emergency contacts saved</p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>Add at least one contact so Nari AI can trigger instant WhatsApp dispatch.</p>
+            </div>
+            <Link
+              to="/profile"
+              className="gradient-btn"
+              style={{ padding: '8px 14px', fontSize: '12px', textDecoration: 'none' }}
+            >
+              Add Now
+            </Link>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {contacts.map((c, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '12px', background: 'var(--bg-input)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <User style={{ width: '18px', height: '18px', color: i === 0 ? 'var(--accent-green)' : 'var(--text-muted)' }} />
+                  <div>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>{c.name}</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '8px' }}>({c.relation}) • {c.phone}</span>
+                  </div>
+                </div>
+                {i === 0 && (
+                  <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '10px', background: 'rgba(37, 211, 102, 0.2)', color: '#25D366', fontWeight: '700' }}>
+                    Primary SOS Dispatch
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
     </div>

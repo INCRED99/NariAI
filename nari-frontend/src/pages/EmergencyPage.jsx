@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Mic, MicOff, Send, ShieldAlert, CheckCircle2, RotateCcw, User, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from '../context/LocationContext';
@@ -53,7 +54,7 @@ const EmergencyPage = () => {
     // 2. Add user message + system confirmation to chat stream
     const systemMsg = firstContact
       ? `⚡ WhatsApp opened & distress alert dispatched to ${firstContact.name || 'Emergency Contact'} (${firstContact.phone || ''}) with live location.`
-      : `⚠️ No emergency contact set — please add one in Settings to enable WhatsApp dispatch.`;
+      : `⚠️ No emergency contact set — please add one in My Profile to enable WhatsApp dispatch.`;
 
     setChatMessages(prev => [
       ...prev,
@@ -313,28 +314,39 @@ const EmergencyPage = () => {
         </div>
       ) : (
         <div className="glass-panel" style={{
-          padding: '14px 20px',
+          padding: '16px 20px',
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
           gap: '14px',
-          background: 'rgba(255, 149, 0, 0.06)',
+          background: 'rgba(255, 149, 0, 0.08)',
           border: '1px solid rgba(255, 149, 0, 0.35)',
         }}>
-          <div style={{
-            width: '40px', height: '40px', borderRadius: '50%',
-            background: 'rgba(255, 149, 0, 0.15)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            <User style={{ width: '20px', height: '20px', color: '#FF9500' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{
+              width: '40px', height: '40px', borderRadius: '50%',
+              background: 'rgba(255, 149, 0, 0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <User style={{ width: '20px', height: '20px', color: '#FF9500' }} />
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#FF9500', margin: 0 }}>
+                No emergency contact set
+              </p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                Add a trusted contact to enable automated WhatsApp dispatch when SOS is triggered.
+              </p>
+            </div>
           </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: '14px', fontWeight: '700', color: '#FF9500', margin: 0 }}>
-              No emergency contact set
-            </p>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-              Go to Settings › Profile to add a trusted contact for WhatsApp dispatch.
-            </p>
-          </div>
+          <Link
+            to="/profile"
+            className="gradient-btn"
+            style={{ padding: '8px 16px', fontSize: '12px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            Add Contact Now
+          </Link>
         </div>
       )}
 

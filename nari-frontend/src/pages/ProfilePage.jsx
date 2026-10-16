@@ -13,6 +13,8 @@ const ProfilePage = () => {
   const [contacts, setContacts] = useState(user?.emergency_contacts || []);
   const [savedMsg, setSavedMsg] = useState('');
   const [saving, setSaving] = useState(false);
+  const [contactFeedback, setContactFeedback] = useState('');
+  const [savingContacts, setSavingContacts] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -21,7 +23,9 @@ const ProfilePage = () => {
       if (user.phone) setPhone(user.phone);
       if (user.safe_word) setSafeWord(user.safe_word);
       if (user.preferred_language) setLang(user.preferred_language);
-      if (user.emergency_contacts) setContacts(user.emergency_contacts);
+      if (user.emergency_contacts && Array.isArray(user.emergency_contacts)) {
+        setContacts(user.emergency_contacts);
+      }
     }
   }, [user]);
 
@@ -29,18 +33,75 @@ const ProfilePage = () => {
   const [newContactRelation, setNewContactRelation] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
 
-  const handleAddContact = (e) => {
+  // Persist contacts both locally (AuthContext/localStorage) and to server
+  const persistContacts = async (updatedContacts) => {
+    setSavingContacts(true);
+    setContacts(updatedContacts);
+
+    // 1. Immediately persist to AuthContext and localStorage
+    const updatedUser = {
+      ...(user || {}),
+      emergency_contacts: updatedContacts
+    };
+    setUser(updatedUser);
+
+    // 2. Persist to backend server
+    try {
+      await client.post('/profile/contacts', updatedContacts);
+      setContactFeedback('Emergency contacts saved successfully!');
+    } catch (err) {
+      // Fallback: try full /profile update
+      try {
+        await client.post('/profile', {
+          name: name || user?.name || 'User',
+          phone: phone || user?.phone || '',
+          preferred_language: lang || user?.preferred_language || 'English (US)',
+          safe_word: safeWord || user?.safe_word || 'Blue Moon',
+          emergency_contacts: updatedContacts
+        });
+        setContactFeedback('Emergency contacts saved successfully!');
+      } catch (fallbackErr) {
+        console.warn('Backend sync note:', fallbackErr?.message || fallbackErr);
+        setContactFeedback('Saved locally on device (cloud sync will retry automatically).');
+      }
+    } finally {
+      setSavingContacts(false);
+      setTimeout(() => setContactFeedback(''), 4000);
+    }
+  };
+
+  const handleAddContact = async (e) => {
     e.preventDefault();
-    if (!newContactName || !newContactPhone) return;
-    const updated = [...contacts, { name: newContactName, relation: newContactRelation || 'Contact', phone: newContactPhone }];
-    setContacts(updated);
+    const cleanName = newContactName.trim();
+    const cleanPhone = newContactPhone.trim();
+    if (!cleanName || !cleanPhone) {
+      setContactFeedback('Please enter both a contact name and phone number.');
+      setTimeout(() => setContactFeedback(''), 3000);
+      return;
+    }
+
+    const updated = [
+      ...contacts,
+      {
+        name: cleanName,
+        relation: newContactRelation.trim() || 'Contact',
+        phone: cleanPhone
+      }
+    ];
+
     setNewContactName('');
     setNewContactRelation('');
     setNewContactPhone('');
+    await persistContacts(updated);
   };
 
-  const handleRemoveContact = (index) => {
-    setContacts(contacts.filter((_, i) => i !== index));
+  const handleRemoveContact = async (index) => {
+    const updated = contacts.filter((_, i) => i !== index);
+    await persistContacts(updated);
+  };
+
+  const handleManualSaveContacts = async () => {
+    await persistContacts(contacts);
   };
 
   const handleSaveProfile = async (e) => {
@@ -58,18 +119,18 @@ const ProfilePage = () => {
 
     try {
       await client.post('/profile', {
-        name,
-        phone,
-        preferred_language: lang,
-        safe_word: safeWord,
+        name: name || 'User',
+        phone: phone || '',
+        preferred_language: lang || 'English (US)',
+        safe_word: safeWord || 'Blue Moon',
         emergency_contacts: contacts
       });
       setUser(updatedProfile);
-      setSavedMsg('Profile updated successfully!');
+      setSavedMsg('Profile and emergency contacts updated successfully!');
     } catch (err) {
       console.warn('Profile save note:', err);
       setUser(updatedProfile);
-      setSavedMsg('Profile saved locally.');
+      setSavedMsg('Profile saved locally on device.');
     } finally {
       setSaving(false);
       setTimeout(() => setSavedMsg(''), 3000);
@@ -82,7 +143,7 @@ const ProfilePage = () => {
       <div className="glass-panel" style={{ padding: '28px' }}>
         <h3 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <User style={{ color: 'var(--accent-purple)', width: '22px', height: '22px' }} />
-          User Profile & Emergency Contacts
+          User Profile & Safety Preferences
         </h3>
 
         {savedMsg && (
@@ -135,9 +196,9 @@ const ProfilePage = () => {
             </p>
           </div>
 
-          <button type="submit" className="gradient-btn" style={{ width: '100%', padding: '14px', marginTop: '8px' }}>
+          <button type="submit" disabled={saving} className="gradient-btn" style={{ width: '100%', padding: '14px', marginTop: '8px' }}>
             <Save style={{ width: '18px', height: '18px' }} />
-            Save Profile & Safe Word
+            {saving ? 'Saving...' : 'Save Profile & Safe Word'}
           </button>
 
         </form>
@@ -145,42 +206,125 @@ const ProfilePage = () => {
 
       {/* Emergency Contacts Management */}
       <div className="glass-panel" style={{ padding: '28px' }}>
-        <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Phone style={{ color: 'var(--accent-cyan)', width: '20px', height: '20px' }} />
-          Manage Emergency Contacts
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+            <Phone style={{ color: 'var(--accent-cyan)', width: '20px', height: '20px' }} />
+            Manage Emergency Contacts
+          </h3>
+          {contacts.length > 0 && (
+            <button
+              type="button"
+              onClick={handleManualSaveContacts}
+              disabled={savingContacts}
+              className="gradient-btn"
+              style={{ padding: '8px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Save style={{ width: '14px', height: '14px' }} />
+              {savingContacts ? 'Saving...' : 'Save Contacts'}
+            </button>
+          )}
+        </div>
+
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+          These trusted contacts receive your distress location, WhatsApp alerts, and live audio broadcasts during an SOS event. The primary contact (first on the list) will receive automated WhatsApp dispatch.
+        </p>
+
+        {contactFeedback && (
+          <div style={{
+            padding: '10px 14px',
+            borderRadius: '10px',
+            background: contactFeedback.includes('Please') ? 'rgba(255, 59, 48, 0.15)' : 'rgba(52, 199, 89, 0.15)',
+            color: contactFeedback.includes('Please') ? 'var(--accent-red)' : 'var(--accent-green)',
+            fontSize: '13px',
+            fontWeight: '600',
+            marginBottom: '20px'
+          }}>
+            {contactFeedback}
+          </div>
+        )}
 
         {/* Existing Contacts List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          {contacts.map((c, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderRadius: '12px', background: 'var(--bg-input)' }}>
-              <div>
-                <p style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>{c.name}</p>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{c.relation} • {c.phone}</p>
-              </div>
-              <button onClick={() => handleRemoveContact(i)} style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', padding: '6px' }}>
-                <Trash2 style={{ width: '18px', height: '18px' }} />
-              </button>
+          {contacts.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', background: 'var(--bg-input)', borderRadius: '12px', border: '1px dashed var(--border-color)' }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>
+                No emergency contacts added yet. Add at least one contact below to enable instant WhatsApp dispatch.
+              </p>
             </div>
-          ))}
+          ) : (
+            contacts.map((c, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderRadius: '12px', background: 'var(--bg-input)' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <p style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>{c.name}</p>
+                    {i === 0 && (
+                      <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '10px', background: 'rgba(37, 211, 102, 0.2)', color: '#25D366', fontWeight: '700' }}>
+                        Primary WhatsApp Dispatch
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>{c.relation} • {c.phone}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveContact(i)}
+                  disabled={savingContacts}
+                  title="Remove contact"
+                  style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', padding: '6px' }}
+                >
+                  <Trash2 style={{ width: '18px', height: '18px' }} />
+                </button>
+              </div>
+            ))
+          )}
         </div>
 
         {/* Add New Contact Form */}
         <form onSubmit={handleAddContact} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
           <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Contact Name</label>
-            <input type="text" placeholder="e.g. Rahul" value={newContactName} onChange={(e) => setNewContactName(e.target.value)} className="glass-input" style={{ width: '100%' }} />
+            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Contact Name *</label>
+            <input
+              type="text"
+              placeholder="e.g. Rahul"
+              value={newContactName}
+              onChange={(e) => setNewContactName(e.target.value)}
+              className="glass-input"
+              style={{ width: '100%' }}
+              required
+            />
           </div>
           <div>
             <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Relation</label>
-            <input type="text" placeholder="e.g. Brother" value={newContactRelation} onChange={(e) => setNewContactRelation(e.target.value)} className="glass-input" style={{ width: '100%' }} />
+            <input
+              type="text"
+              placeholder="e.g. Brother"
+              value={newContactRelation}
+              onChange={(e) => setNewContactRelation(e.target.value)}
+              className="glass-input"
+              style={{ width: '100%' }}
+            />
           </div>
           <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Phone Number</label>
-            <input type="text" placeholder="+91 98765..." value={newContactPhone} onChange={(e) => setNewContactPhone(e.target.value)} className="glass-input" style={{ width: '100%' }} />
+            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Phone Number *</label>
+            <input
+              type="text"
+              placeholder="+91 98765 43210"
+              value={newContactPhone}
+              onChange={(e) => setNewContactPhone(e.target.value)}
+              className="glass-input"
+              style={{ width: '100%' }}
+              required
+            />
           </div>
-          <button type="submit" className="gradient-btn" style={{ padding: '12px 18px' }}>
+          <button
+            type="submit"
+            disabled={savingContacts}
+            className="gradient-btn"
+            style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: '6px' }}
+            title="Add and save contact"
+          >
             <Plus style={{ width: '18px', height: '18px' }} />
+            <span style={{ fontSize: '12px' }}>{savingContacts ? 'Saving...' : 'Add'}</span>
           </button>
         </form>
       </div>

@@ -10,22 +10,22 @@ router = APIRouter(prefix="/profile", tags=["User Profile & Memory"])
 from backend.services.auth_helper import get_current_user_uid
 
 class ContactItem(BaseModel):
-    name: str
-    relation: str
-    phone: str
+    name: Optional[str] = ""
+    relation: Optional[str] = "Contact"
+    phone: Optional[str] = ""
 
 class ProfileUpdateRequest(BaseModel):
-    name: str
+    name: Optional[str] = "User"
     phone: Optional[str] = ""
     preferred_language: Optional[str] = "English (US)"
     safe_word: Optional[str] = "Blue Moon"
-    home_address: Optional[str] = ""
-    home_lat: Optional[float] = 0.0
-    home_lng: Optional[float] = 0.0
-    office_address: Optional[str] = ""
-    office_lat: Optional[float] = 0.0
-    office_lng: Optional[float] = 0.0
-    travel_routine: Optional[str] = ""
+    home_address: Optional[str] = None
+    home_lat: Optional[float] = None
+    home_lng: Optional[float] = None
+    office_address: Optional[str] = None
+    office_lat: Optional[float] = None
+    office_lng: Optional[float] = None
+    travel_routine: Optional[str] = None
     emergency_contacts: Optional[List[ContactItem]] = []
 
 @router.get("")
@@ -76,9 +76,9 @@ def get_profile(authorization: Optional[str] = Header(None)):
         contacts = []
         for c in profile_data.get("emergency_contacts", []):
             contacts.append({
-                "name": c.get("name"),
-                "relation": c.get("relation"),
-                "phone": c.get("phone")
+                "name": c.get("name") or "",
+                "relation": c.get("relation") or "Contact",
+                "phone": c.get("phone") or ""
             })
             
         return {
@@ -121,37 +121,81 @@ def update_profile(
         api_key = x_groq_key or x_api_key or x_gemini_key
         col = get_user_profiles_col()
         
-        contacts_dict = [c.dict() for c in request.emergency_contacts]
+        contacts_dict = [c.dict() for c in (request.emergency_contacts or [])]
         
+        # Build update fields cleanly
+        set_fields = {
+            "name": request.name or "User",
+            "phone": request.phone or "",
+            "preferred_language": request.preferred_language or "English (US)",
+            "safe_word": request.safe_word or "Blue Moon",
+            "emergency_contacts": contacts_dict
+        }
+        if request.home_address is not None:
+            set_fields["home_address"] = request.home_address
+            if request.home_lat is not None:
+                set_fields["home_lat"] = request.home_lat
+            if request.home_lng is not None:
+                set_fields["home_lng"] = request.home_lng
+        if request.office_address is not None:
+            set_fields["office_address"] = request.office_address
+            if request.office_lat is not None:
+                set_fields["office_lat"] = request.office_lat
+            if request.office_lng is not None:
+                set_fields["office_lng"] = request.office_lng
+        if request.travel_routine is not None:
+            set_fields["travel_routine"] = request.travel_routine
+
         # Update MongoDB
         if col is not None:
             col.update_one(
                 {"uid": uid},
-                {"$set": {
-                    "name": request.name,
-                    "phone": request.phone,
-                    "preferred_language": request.preferred_language,
-                    "safe_word": request.safe_word,
-                    "home_address": request.home_address,
-                    "home_lat": request.home_lat,
-                    "home_lng": request.home_lng,
-                    "office_address": request.office_address,
-                    "office_lat": request.office_lat,
-                    "office_lng": request.office_lng,
-                    "travel_routine": request.travel_routine,
-                    "emergency_contacts": contacts_dict
-                }},
+                {"$set": set_fields},
                 upsert=True
             )
         
-        # Process and update semantic LTM (Mem0 style)
-        memory_service.process_and_extract_memory(
-            user_message=f"I live at '{request.home_address}'. My office is at '{request.office_address}'. My daily travel is: '{request.travel_routine}'. Preferred language is '{request.preferred_language}'. Safe word is '{request.safe_word}'.",
-            user_id=uid,
-            api_key=api_key
-        )
+        # Process and update semantic LTM (Mem0 style) non-blockingly
+        try:
+            home_txt = request.home_address or ""
+            off_txt = request.office_address or ""
+            trv_txt = request.travel_routine or ""
+            memory_service.process_and_extract_memory(
+                user_message=f"I live at '{home_txt}'. My office is at '{off_txt}'. My daily travel is: '{trv_txt}'. Preferred language is '{request.preferred_language}'. Safe word is '{request.safe_word}'.",
+                user_id=uid,
+                api_key=api_key
+            )
+        except Exception as mem_err:
+            pass
         
-        return {"success": True, "message": "Profile updated and AI safety memory extracted."}
+        return {"success": True, "message": "Profile updated successfully.", "emergency_contacts": contacts_dict}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/contacts")
+def update_contacts(
+    contacts: List[ContactItem] = Body(...),
+    authorization: Optional[str] = Header(None)
+):
+    """Directly update and persist emergency contacts."""
+    try:
+        if not authorization:
+            raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
+        uid = get_current_user_uid(authorization)
+        col = get_user_profiles_col()
+        contacts_dict = [c.dict() for c in contacts]
+        if col is not None:
+            col.update_one(
+                {"uid": uid},
+                {"$set": {"emergency_contacts": contacts_dict}},
+                upsert=True
+            )
+        return {"success": True, "emergency_contacts": contacts_dict, "message": "Emergency contacts saved successfully."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
