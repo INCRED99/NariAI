@@ -37,6 +37,17 @@ const ChatPage = ({ onTriggerSos }) => {
     if (!textToSend) setInput('');
     setLoading(true);
 
+    // ── CLIENT-SIDE SAFE WORD CHECK ──────────────────────────────────────────
+    // Synchronous check inside the click/submit handler — WhatsApp opens
+    // immediately, before any async API call, to avoid popup blocker.
+    const safeWord = (user?.safe_word || 'blue moon').toLowerCase();
+    if (query.toLowerCase().includes(safeWord)) {
+      setActiveState('Emergency');
+      setThreatScore(100);
+      onTriggerSos(`🔑 SAFE WORD "${user?.safe_word || 'Blue Moon'}" detected in message`);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     try {
       // Format chat history for API payload
       const historyFormatted = messages.map(m => ({ role: m.role, content: m.content }));
@@ -55,16 +66,15 @@ const ChatPage = ({ onTriggerSos }) => {
       if (next_action) setNextAction(next_action);
 
       if (threat_score >= 100 || is_emergency) {
-        onTriggerSos();
+        onTriggerSos(`Risk level critical — ${state || 'Emergency'} state detected in conversation`);
       }
     } catch (err) {
       console.error('Chat processing error:', err);
       let errorReply = `⚠️ Connection error: Unable to reach Nari LLM service. (${err.message || 'Server error'})`;
-      if (query.toLowerCase().includes('blue moon')) {
+      if (query.toLowerCase().includes('blue moon') || (user?.safe_word && query.toLowerCase().includes(user.safe_word.toLowerCase()))) {
         errorReply = "🚨 SAFE WORD DETECTED! Activating immediate location broadcast & alerting trusted contacts.";
         setActiveState('Emergency');
         setThreatScore(100);
-        onTriggerSos();
       }
       setMessages((prev) => [...prev, { role: 'assistant', content: errorReply }]);
     } finally {

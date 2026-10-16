@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { useLocation } from './context/LocationContext';
+import { triggerWhatsAppSos } from './utils/emergencyWhatsapp';
 import { ThemeProvider } from './context/ThemeContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -17,7 +19,16 @@ import SettingsPage from './pages/SettingsPage';
 
 const AppLayout = () => {
   const { user, token, loading } = useAuth();
+  const { latitude, longitude, locationName } = useLocation();
   const [isSosOpen, setIsSosOpen] = useState(false);
+
+  // Immediately open WhatsApp then show the SosModal for status feedback
+  const handleTriggerSos = useCallback((situationOverride) => {
+    const situation = situationOverride || 'Manual SOS Trigger';
+    const contacts = user?.emergency_contacts || [{ name: 'Emergency Contact', phone: '7007914594' }];
+    triggerWhatsAppSos(situation, { latitude, longitude, locationName }, contacts);
+    setIsSosOpen(true);
+  }, [user, latitude, longitude, locationName]);
 
   if (loading) {
     return (
@@ -35,7 +46,7 @@ const AppLayout = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)' }}>
       {/* Navigation Sidebar */}
-      <Sidebar onTriggerSos={() => setIsSosOpen(true)} />
+      <Sidebar onTriggerSos={handleTriggerSos} />
 
       {/* Main Content Viewport */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -43,8 +54,8 @@ const AppLayout = () => {
         
         <main style={{ flex: 1, padding: '28px', minWidth: 0 }}>
           <Routes>
-            <Route path="/" element={<DashboardPage onTriggerSos={() => setIsSosOpen(true)} />} />
-            <Route path="/chat" element={<ChatPage onTriggerSos={() => setIsSosOpen(true)} />} />
+            <Route path="/" element={<DashboardPage onTriggerSos={handleTriggerSos} />} />
+            <Route path="/chat" element={<ChatPage onTriggerSos={handleTriggerSos} />} />
             <Route path="/routes" element={<RouteSafetyPage />} />
             <Route path="/nearby" element={<NearbyPage />} />
             <Route path="/emergency" element={<EmergencyPage />} />

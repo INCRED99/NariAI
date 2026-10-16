@@ -57,6 +57,15 @@ const SosModal = ({ isOpen, onClose }) => {
     setWaOpened(true);
   }, [waOpened]);
 
+  // ── IMMEDIATE WhatsApp dispatch on modal open (no waiting) ──────────────────
+  useEffect(() => {
+    if (isOpen && !waOpened) {
+      openWhatsAppFallback();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]); // Only on open, not on every waOpened change
+  // ─────────────────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     let timer;
     if (isOpen && countdown > 0 && !isSent && !error) {
@@ -110,10 +119,12 @@ const SosModal = ({ isOpen, onClose }) => {
   // Fallback: generate wa.me links locally and open WhatsApp
   const openWhatsAppFallback = useCallback(() => {
     const emergencyMsg = buildEmergencyMessage();
-    const contacts = user?.emergency_contacts || [
-      { name: 'Aarav Sharma', phone: '7007914594' },
-      { name: 'Neha Verma', phone: '+91 91234 56789' }
-    ];
+    const contacts = (user?.emergency_contacts?.length > 0)
+      ? user.emergency_contacts
+      : [
+          { name: 'Aarav Sharma', phone: '7007914594' },
+          { name: 'Neha Verma', phone: '+91 91234 56789' }
+        ];
 
     contacts.forEach((c, idx) => {
       const waLink = generateLocalWaLink(c.phone, `🚨 SOS for ${c.name}!\n\n${emergencyMsg}`);
@@ -151,10 +162,10 @@ const SosModal = ({ isOpen, onClose }) => {
   // Build WhatsApp links for display (from backend response or local fallback)
   const displayWaLinks = sosResponse?.whatsapp_links?.length > 0
     ? sosResponse.whatsapp_links
-    : (user?.emergency_contacts || [
+    : ((user?.emergency_contacts?.length > 0 ? user.emergency_contacts : [
         { name: 'Aarav Sharma', phone: '7007914594' },
         { name: 'Neha Verma', phone: '+91 91234 56789' }
-      ]).map(c => ({
+      ])).map(c => ({
         name: c.name,
         phone: c.phone,
         wa_link: generateLocalWaLink(c.phone, `🚨 SOS for ${c.name}!\n\n${buildEmergencyMessage()}`)

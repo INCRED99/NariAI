@@ -20,11 +20,11 @@ const EmergencyPage = () => {
   const liveTranscriptRef = useRef('');
   const hasSentVoiceRef = useRef(false);
 
-  // Get the first emergency contact
-  const contacts = user?.emergency_contacts || [
-    { name: 'Aarav Sharma', relation: 'Husband', phone: '7007914594' },
-  ];
-  const firstContact = contacts[0];
+  // Get the first emergency contact — guard against empty array ([] is truthy!)
+  const contacts = (user?.emergency_contacts?.length > 0)
+    ? user.emergency_contacts
+    : [{ name: 'Aarav Sharma', relation: 'Husband', phone: '7007914594' }];
+  const firstContact = contacts[0] || { name: 'Aarav Sharma', relation: 'Husband', phone: '7007914594' };
 
   // Scroll chat to bottom
   useEffect(() => {
